@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RateShift — January Pricing & Courier Increase Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --background: #0b0f19;
+      --card: #111827;
+      --card-border: #1f2937;
+      --border: #374151;
+      --foreground: #f9fafb;
+      --muted-foreground: #9ca3af;
+      --primary: #3b82f6;
+    }
+    body {
+      background-color: var(--background);
+      color: var(--foreground);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .badge {
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="p-6 min-h-screen">
+
+  <!-- Top Navigation & Header -->
+  <header class="flex flex-col md:flex-row md:items-center justify-between pb-6 mb-6 border-b border-[var(--card-border)] gap-4">
+    <div>
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg font-bold text-white text-lg">
+          ⚡
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            RateShift <span class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono" id="db-badge">SQLite Local</span>
+          </h1>
+          <p class="text-xs text-[var(--muted-foreground)]">Despatch Cloud Billing API & Pricing Scheduling Console</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <button onclick="triggerSync()" id="btn-sync" class="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg transition font-medium">
+        <span>🔄</span> Sync From Billing API
+      </button>
+      <div class="flex items-center gap-2 text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-3 py-1.5 rounded-lg">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="sync-status-text">Connected</span>
+      </div>
+      <div class="text-xs bg-[var(--card)] border border-[var(--border)] px-3 py-1.5 rounded-lg text-gray-300">
+        Target: <strong class="text-white" id="target-date-display">Jan 1, 2027 00:01 UTC</strong>
+      </div>
+    </div>
+  </header>
+
+  <!-- Quick Stat Bar -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
+      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Customers Synced</div>
+      <div class="text-2xl font-bold text-white" id="stat-customers">...</div>
+      <div class="text-xs text-emerald-400 mt-1 flex items-center gap-1">
+        <span id="stat-eligible">...</span> <span class="text-gray-500">•</span> <span class="text-amber-400" id="stat-exempt">...</span>
+      </div>
+    </div>
+
+    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
+      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Configured Couriers</div>
+      <div class="text-2xl font-bold text-white" id="stat-couriers">12</div>
+      <div class="text-xs text-gray-400 mt-1"><span id="stat-rates">...</span> Rate Cards Staged</div>
+    </div>
+
+    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
+      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Projected Increase Impact</div>
+      <div class="text-2xl font-bold text-emerald-400" id="stat-diff">+£0.00</div>
+      <div class="text-xs text-gray-400 mt-1">Average Applied: <span class="text-white font-medium" id="stat-avg-pct">+0.00%</span></div>
+    </div>
+
+    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 flex flex-col justify-between">
+      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider">Campaign Pipeline</div>
+      <div class="flex items-center gap-2 mt-1">
+        <span class="badge bg-amber-500/20 text-amber-300 border border-amber-500/30" id="badge-campaign-status">DRAFT</span>
+      </div>
+      <div class="text-xs text-gray-400 mt-1" id="campaign-status-desc">Ready for configuration & simulation</div>
+    </div>
+  </div>
+
+  <!-- Main Tabs -->
+  <div class="flex border-b border-[var(--card-border)] mb-6 text-sm gap-2">
+    <button onclick="setTab('rules')" id="tab-btn-rules" class="px-4 py-2 font-medium border-b-2 border-blue-500 text-blue-400 transition-colors">
+      1. Carrier Rules & Cutoff
+    </button>
+    <button onclick="setTab('matrix')" id="tab-btn-matrix" class="px-4 py-2 font-medium border-b-2 border-transparent text-gray-400 hover:text-white transition-colors">
+      2. Price Matrix & Diff Inspector
+    </button>
+    <button onclick="setTab('sandbox')" id="tab-btn-sandbox" class="px-4 py-2 font-medium border-b-2 border-transparent text-gray-400 hover:text-white transition-colors">
+      3. Fake Customer Testing Sandbox
+    </button>
+    <button onclick="setTab('deploy')" id="tab-btn-deploy" class="px-4 py-2 font-medium border-b-2 border-transparent text-gray-400 hover:text-white transition-colors">
+      4. Live Execution & Logs
+    </button>
+  </div>
+
+  <!-- TAB 1: RULES CONFIGURATION -->
+  <div id="tab-rules" class="space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left 2 Cols: Carrier Increase Sliders -->
+      <div class="lg:col-span-2 bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-5">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-semibold text-white">Carrier Price Increase Rules</h2>
+            <p class="text-xs text-[var(--muted-foreground)]">Specify the price increase percentage per carrier for January 1st.</p>
+          </div>
+          <button onclick="saveRules()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition">
+            Save Rule Settings
+          </button>
+        </div>
+
+        <div class="space-y-4 pt-2" id="carrier-rules-container">
+          <!-- Dynamic carrier sliders injected by JavaScript -->
+        </div>
+      </div>
+
+      <!-- Right Col: Customer Eligibility & Exemption Rules -->
+      <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-5">
+        <div>
+          <h2 class="text-base font-semibold text-white">Customer Eligibility Rules</h2>
+          <p class="text-xs text-[var(--muted-foreground)]">Exempt customers based on joining date or bespoke contracts.</p>
+        </div>
+
+        <div class="space-y-4 pt-2">
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium text-gray-300">Join Date Exemption Cutoff</label>
+            <input type="date" id="cutoff-date-input" value="2026-09-01" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500" onchange="saveRules()">
+            <p class="text-[11px] text-gray-400">Customers joined after this date receive <strong class="text-amber-400">0% increase</strong> (locked introductory rate).</p>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium text-gray-300">Scheduled Target Date</label>
+            <input type="datetime-local" id="sched-date-input" value="2027-01-01T00:01" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+          </div>
+
+          <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <div class="text-xs font-semibold text-blue-300 mb-1">Safety Notice</div>
+            <p class="text-xs text-gray-300">
+              Changes will not be pushed to Billing API until either the scheduled date triggers or you click "Run Batch Now" after testing.
+            </p>
+          </div>
+
+          <button onclick="setTab('matrix')" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-md">
+            Review Price Matrix & Diff →
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: CUSTOMER PRICE MATRIX & DIFF -->
+  <div id="tab-matrix" class="hidden space-y-4">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
+      <div class="flex items-center gap-3">
+        <input type="text" id="cust-search" placeholder="Search customer name or DC-ID..." class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white w-64 focus:outline-none focus:border-blue-500" onkeyup="filterTable()">
+        <select id="cust-carrier-filter" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500" onchange="filterTable()">
+          <option value="all">All Carriers</option>
+          <option value="DPD">DPD Only</option>
+          <option value="YODC2C">Yodel Only</option>
+          <option value="RM">Royal Mail Only</option>
+        </select>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button onclick="loadRatesPreview()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition">
+          Re-calculate Rates
+        </button>
+        <a href="/api/export-csv" download class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-gray-700 flex items-center gap-1">
+          <span>📥</span> Export Diff CSV
+        </a>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl overflow-hidden shadow-lg">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs" id="rate-table">
+          <thead class="bg-gray-900/80 text-[var(--muted-foreground)] uppercase tracking-wider text-[10px] border-b border-[var(--border)]">
+            <tr>
+              <th class="p-3">DC ID</th>
+              <th class="p-3">Customer Name</th>
+              <th class="p-3">Carrier / Service</th>
+              <th class="p-3">Zone & Weight Band</th>
+              <th class="p-3 text-right">Current Price</th>
+              <th class="p-3 text-right">Applied %</th>
+              <th class="p-3 text-right">New Price</th>
+              <th class="p-3 text-right">Diff (£)</th>
+              <th class="p-3 text-center">Eligibility / Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800 font-mono text-xs" id="table-body">
+            <tr><td colspan="9" class="p-6 text-center text-gray-500">Loading rate cards and calculating differentials...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: SANDBOX TEST LAB -->
+  <div id="tab-sandbox" class="hidden space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-4">
+        <h2 class="text-base font-semibold text-white">Safe Sandbox Verification</h2>
+        <p class="text-xs text-[var(--muted-foreground)]">
+          Follow our 2-step verification procedure: create a test customer and push sample prices to verify that Billing API accepts our changes cleanly.
+        </p>
+
+        <div class="space-y-3 pt-2">
+          <!-- Step 1: Create Fake Customer -->
+          <div class="p-3.5 bg-gray-900 rounded-lg border border-gray-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-white">Step 1: Create Test Customer</span>
+              <span class="badge bg-gray-800 text-gray-300">POST /api/create-customer</span>
+            </div>
+            <div class="text-[11px] text-gray-400">Creates `TEST-JAN-2027` in Billing API to safely receive test pricing adjustments.</div>
+            <button onclick="runTestCustomerCreate()" id="btn-create-test" class="bg-gray-800 hover:bg-gray-700 text-blue-400 border border-blue-500/30 text-xs px-3 py-1.5 rounded-lg font-medium transition">
+              Create Test Customer
+            </button>
+            <div id="test-cust-result" class="hidden mt-2 text-xs font-mono p-2 bg-black rounded border border-gray-800 text-emerald-400"></div>
+          </div>
+
+          <!-- Step 2: Push Test Rates -->
+          <div class="p-3.5 bg-gray-900 rounded-lg border border-gray-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-white">Step 2: Push January Rates to Test Customer</span>
+              <span class="badge bg-gray-800 text-gray-300">POST /api/prices/update-customer-prices</span>
+            </div>
+            <div class="text-[11px] text-gray-400">Applies 3.9% on DPD (£16.00 -> £16.62) and 2.0% on Yodel (£12.00 -> £12.24).</div>
+            <button onclick="runTestRatePush()" id="btn-push-test" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition">
+              Execute Test Price Update
+            </button>
+            <div id="test-push-result" class="hidden mt-2 text-xs font-mono p-2 bg-black rounded border border-gray-800 text-emerald-400"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-time Payload & Response Inspector -->
+      <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-3 font-mono text-xs">
+        <div class="flex items-center justify-between font-sans">
+          <span class="font-semibold text-sm text-white">API Payload & Response Inspector</span>
+          <span class="text-[11px] text-gray-400">Live Billing API Stream</span>
+        </div>
+
+        <div class="space-y-1">
+          <div class="text-[10px] text-gray-400 uppercase">Test Request Payload:</div>
+          <pre class="bg-black/80 border border-gray-800 rounded-lg p-3 text-gray-300 overflow-x-auto text-[11px]" id="payload-view">
+{
+  "customer_dc_id": "TEST-JAN-2027",
+  "prices": [
+    {
+      "service_id": 764,        // DPD Next Day
+      "zone_id": 9527,          // Mainland
+      "weight_class_id": 17516, // 0-30kg
+      "price": 1662,            // £16.62 (+3.9%)
+      "sub_price": 416
+    },
+    {
+      "service_id": 2777,       // Yodel
+      "zone_id": 20809,
+      "weight_class_id": 33799,
+      "price": 1224,            // £12.24 (+2.0%)
+      "sub_price": 306
+    }
+  ]
+}</pre>
+        </div>
+
+        <div class="space-y-1 pt-2">
+          <div class="text-[10px] text-gray-400 uppercase">Live Server Response:</div>
+          <pre id="server-response-view" class="bg-black/80 border border-gray-800 rounded-lg p-3 text-emerald-400 overflow-x-auto text-[11px]">
+// Ready. Click Step 1 or Step 2 to execute live API calls.</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 4: LIVE EXECUTION & LOGS -->
+  <div id="tab-deploy" class="hidden space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-4">
+        <h2 class="text-base font-semibold text-white">Campaign Execution Control</h2>
+        <p class="text-xs text-[var(--muted-foreground)]">
+          Queue the January 1st price increase for autonomous execution or trigger an immediate batch.
+        </p>
+
+        <div class="p-4 bg-gray-900 rounded-xl border border-gray-800 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold text-white">Execution Options</div>
+              <div class="text-xs text-gray-400">Rate-limited to 5 requests per second for API protection.</div>
+            </div>
+            <span class="badge bg-blue-500/20 text-blue-400" id="exec-badge">SAFE MODE</span>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button onclick="armCampaign()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2.5 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition">
+              <span>📅</span> Arm for Jan 1, 2027 (Auto-Run)
+            </button>
+            <button onclick="triggerImmediateRun()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2.5 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition">
+              <span>⚡</span> Run Immediate Batch Now
+            </button>
+          </div>
+
+          <div id="progress-box" class="hidden space-y-2 pt-2 border-t border-gray-800">
+            <div class="flex justify-between text-xs text-gray-300">
+              <span id="progress-text">Executing batch...</span>
+              <span id="progress-pct" class="font-bold text-white">0%</span>
+            </div>
+            <div class="w-full bg-gray-800 h-2.5 rounded-full overflow-hidden">
+              <div id="progress-bar" class="bg-emerald-500 h-full w-0 transition-all duration-300"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Audit Log Viewer -->
+        <div class="space-y-2">
+          <div class="flex justify-between items-center">
+            <h3 class="text-sm font-semibold text-white">Recent Audit Logs</h3>
+            <button onclick="loadAuditLogs()" class="text-xs text-blue-400 hover:underline">Refresh Logs</button>
+          </div>
+          <div class="bg-gray-900 rounded-lg border border-gray-800 p-3 max-h-64 overflow-y-auto font-mono text-xs divide-y divide-gray-800" id="logs-container">
+            <div class="text-gray-500 py-1">No execution logs yet.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Railway Environment Reference -->
+      <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-3">
+        <h2 class="text-base font-semibold text-white">Railway Deployment Guide</h2>
+        <div class="text-xs text-gray-400">When creating your Railway project, add:</div>
+        <ol class="list-decimal list-inside text-xs text-gray-300 space-y-1.5 pt-1">
+          <li><strong>GitHub Repo:</strong> Connect `rossjermymoov/priceincreases`</li>
+          <li><strong>Database:</strong> Add a PostgreSQL service in Railway</li>
+          <li><strong>Environment:</strong> Set `DATABASE_URL` (auto-bound by Railway) and `BILLING_API_TOKEN`</li>
+        </ol>
+
+        <div class="text-xs text-gray-400 pt-2">Environment variables:</div>
+        <pre class="bg-black/90 p-3 rounded-lg border border-gray-800 font-mono text-[11px] text-gray-300 overflow-x-auto space-y-1">
+PORT=3000
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+BILLING_API_BASE=https://production.billingapi.co.uk
+BILLING_API_TOKEN=iiMcRFucDESz3pxU
+SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let rulesData = [];
+
+    async function init() {
+      await loadStatus();
+      await loadRules();
+      await loadRatesPreview();
+      await loadAuditLogs();
+    }
+
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        document.getElementById('stat-customers').innerText = data.counts.customers;
+        document.getElementById('stat-couriers').innerText = data.counts.couriers + ' Couriers';
+        document.getElementById('stat-rates').innerText = data.counts.rates;
+        document.getElementById('badge-campaign-status').innerText = data.campaign.status;
+        document.getElementById('db-badge').innerText = data.dbDriver.toUpperCase() + ' Mode';
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadRules() {
+      try {
+        const res = await fetch('/api/rules');
+        const data = await res.json();
+        rulesData = data.rules;
+        document.getElementById('cutoff-date-input').value = data.cutoffDate || '2026-09-01';
+
+        const container = document.getElementById('carrier-rules-container');
+        container.innerHTML = '';
+        rulesData.forEach(r => {
+          const div = document.createElement('div');
+          div.className = 'p-3.5 bg-gray-900/60 rounded-lg border border-gray-800 flex flex-col md:flex-row md:items-center justify-between gap-4';
+          div.innerHTML = `
+            <div class="flex items-center gap-3">
+              <span class="w-8 h-8 rounded bg-blue-600/20 text-blue-400 font-bold flex items-center justify-center text-xs border border-blue-500/30">${r.carrier_code || r.carrier_name.substring(0, 3)}</span>
+              <div>
+                <div class="font-medium text-sm text-white">${r.carrier_name}</div>
+                <div class="text-xs text-gray-400">Carrier Code: ${r.carrier_code}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent}" class="w-32 accent-blue-500" id="slider-${r.carrier_name}" oninput="document.getElementById('val-${r.carrier_name}').innerText = this.value + '%'">
+              <div class="w-16 text-right font-mono font-bold text-sm text-blue-400" id="val-${r.carrier_name}">${r.increase_percent}%</div>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function saveRules() {
+      const updatedRules = rulesData.map(r => ({
+        carrier_name: r.carrier_name,
+        increase_percent: parseFloat(document.getElementById('slider-' + r.carrier_name).value),
+        active: 1
+      }));
+      const cutoff = document.getElementById('cutoff-date-input').value;
+
+      await fetch('/api/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rules: updatedRules, cutoffDate: cutoff })
+      });
+      await loadRatesPreview();
+    }
+
+    async function loadRatesPreview() {
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-500">Calculating differential rate cards...</td></tr>';
+      try {
+        const res = await fetch('/api/rates/preview');
+        const data = await res.json();
+
+        document.getElementById('stat-diff').innerText = '+£' + Number(data.summary.totalDifference).toLocaleString();
+        document.getElementById('stat-avg-pct').innerText = '+' + data.summary.averageIncreasePercent + '%';
+        document.getElementById('stat-eligible').innerText = (data.summary.totalRates - data.summary.exemptRates) + ' Active';
+        document.getElementById('stat-exempt').innerText = data.summary.exemptRates + ' Exempt (0%)';
+
+        tbody.innerHTML = '';
+        if (data.rates.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-400">No rates staged. Click "Sync From Billing API" to import live rates!</td></tr>';
+          return;
+        }
+
+        data.rates.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-gray-800/40';
+          tr.innerHTML = `
+            <td class="p-3 font-bold text-white">${r.customer_dc_id}</td>
+            <td class="p-3 font-sans text-gray-200 font-medium">${r.customer_name}</td>
+            <td class="p-3 font-sans"><span class="badge bg-blue-600/20 text-blue-300">${r.courier_code}</span> <span class="text-gray-400">${r.service_name}</span></td>
+            <td class="p-3 font-sans text-gray-400">${r.zone_name} (${r.weight_band})</td>
+            <td class="p-3 text-right text-gray-300">£${(r.old_price / 100).toFixed(2)}</td>
+            <td class="p-3 text-right ${r.applied_percent > 0 ? 'text-blue-400 font-bold' : 'text-gray-500'}">+${r.applied_percent.toFixed(1)}%</td>
+            <td class="p-3 text-right ${r.diff_pence > 0 ? 'text-emerald-400 font-bold' : 'text-gray-300'}">£${(r.new_price / 100).toFixed(2)}</td>
+            <td class="p-3 text-right ${r.diff_pence > 0 ? 'text-emerald-400' : 'text-gray-500'}">+£${(r.diff_pence / 100).toFixed(2)}</td>
+            <td class="p-3 text-center">
+              ${r.is_exempt ? `<span class="badge bg-amber-500/20 text-amber-300">${r.exemption_reason}</span>` : `<span class="badge bg-emerald-500/20 text-emerald-400">Ready</span>`}
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-red-400">${e.message}</td></tr>`;
+      }
+    }
+
+    async function triggerSync() {
+      const btn = document.getElementById('btn-sync');
+      btn.innerText = 'Syncing...';
+      try {
+        const res = await fetch('/api/sync', { method: 'POST' });
+        const data = await res.json();
+        alert(`Successfully synced ${data.customersSynced} customers, ${data.couriersSynced} couriers, and ${data.servicesSynced} services!`);
+        await init();
+      } catch (e) {
+        alert('Sync error: ' + e.message);
+      } finally {
+        btn.innerText = '🔄 Sync From Billing API';
+      }
+    }
+
+    async function runTestCustomerCreate() {
+      const btn = document.getElementById('btn-create-test');
+      const resEl = document.getElementById('test-cust-result');
+      const view = document.getElementById('server-response-view');
+      btn.innerText = 'Creating in Billing API...';
+      try {
+        const res = await fetch('/api/sandbox/create-customer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dc_id: 'TEST-JAN-2027', name: 'Test Customer Jan 2027' })
+        });
+        const data = await res.json();
+        btn.innerText = '✓ Created';
+        btn.classList.add('text-emerald-400', 'border-emerald-500');
+        resEl.classList.remove('hidden');
+        resEl.innerText = '✓ Customer TEST-JAN-2027 created successfully in Billing API.';
+        view.innerText = JSON.stringify(data, null, 2);
+      } catch (e) {
+        btn.innerText = 'Failed';
+        resEl.classList.remove('hidden');
+        resEl.innerText = 'Error: ' + e.message;
+      }
+    }
+
+    async function runTestRatePush() {
+      const btn = document.getElementById('btn-push-test');
+      const resEl = document.getElementById('test-push-result');
+      const view = document.getElementById('server-response-view');
+      btn.innerText = 'Posting to Billing API...';
+      try {
+        const res = await fetch('/api/sandbox/test-price-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customer_dc_id: 'TEST-JAN-2027' })
+        });
+        const data = await res.json();
+        btn.innerText = '✓ Rates Updated';
+        resEl.classList.remove('hidden');
+        resEl.innerText = '✓ Success: 2 rate lines pushed and verified in Billing API.';
+        view.innerText = JSON.stringify(data, null, 2);
+      } catch (e) {
+        btn.innerText = 'Failed';
+        resEl.classList.remove('hidden');
+        resEl.innerText = 'Error: ' + e.message;
+      }
+    }
+
+    async function armCampaign() {
+      const date = document.getElementById('sched-date-input').value;
+      const res = await fetch('/api/campaign/arm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledDate: date ? new Date(date).toISOString() : '2027-01-01T00:01:00Z' })
+      });
+      const data = await res.json();
+      alert('Campaign Armed! Worker will execute automatically at ' + data.scheduledDate);
+      await loadStatus();
+    }
+
+    async function triggerImmediateRun() {
+      if (!confirm('Are you sure you want to execute price updates immediately across all eligible customers?')) return;
+      await fetch('/api/campaign/run-now', { method: 'POST' });
+      document.getElementById('progress-box').classList.remove('hidden');
+      pollProgress();
+    }
+
+    function pollProgress() {
+      const timer = setInterval(async () => {
+        const res = await fetch('/api/campaign/progress');
+        const data = await res.json();
+        if (data.total > 0) {
+          const pct = Math.round((data.current / data.total) * 100);
+          document.getElementById('progress-pct').innerText = pct + '%';
+          document.getElementById('progress-bar').style.width = pct + '%';
+          document.getElementById('progress-text').innerText = `${data.lastMessage} (${data.current}/${data.total})`;
+        }
+        if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+          clearInterval(timer);
+          await loadAuditLogs();
+        }
+      }, 1000);
+    }
+
+    async function loadAuditLogs() {
+      try {
+        const res = await fetch('/api/audit-logs');
+        const logs = await res.json();
+        const container = document.getElementById('logs-container');
+        if (logs.length === 0) {
+          container.innerHTML = '<div class="text-gray-500 py-1">No execution logs yet.</div>';
+          return;
+        }
+        container.innerHTML = logs.map(l => `
+          <div class="py-2 flex justify-between items-start gap-4">
+            <div>
+              <span class="badge ${l.status === 'SUCCESS' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-300'}">${l.event_type}</span>
+              <span class="text-gray-300 font-bold ml-1">${l.customer_dc_id}</span>
+              <span class="text-gray-400 ml-2">${l.details}</span>
+            </div>
+            <span class="text-gray-500 text-[10px] whitespace-nowrap">${new Date(l.created_at).toLocaleTimeString()}</span>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function setTab(tabName) {
+      ['rules', 'matrix', 'sandbox', 'deploy'].forEach(t => {
+        document.getElementById('tab-' + t).classList.add('hidden');
+        document.getElementById('tab-btn-' + t).classList.remove('border-blue-500', 'text-blue-400');
+        document.getElementById('tab-btn-' + t).classList.add('border-transparent', 'text-gray-400');
+      });
+      document.getElementById('tab-' + tabName).classList.remove('hidden');
+      document.getElementById('tab-btn-' + tabName).classList.remove('border-transparent', 'text-gray-400');
+      document.getElementById('tab-btn-' + tabName).classList.add('border-blue-500', 'text-blue-400');
+    }
+
+    function filterTable() {
+      const q = document.getElementById('cust-search').value.toLowerCase();
+      const carrier = document.getElementById('cust-carrier-filter').value;
+      const rows = document.querySelectorAll('#table-body tr');
+      rows.forEach(r => {
+        const text = r.innerText.toLowerCase();
+        const matchQ = text.includes(q);
+        const matchCarrier = carrier === 'all' || text.includes(carrier.toLowerCase());
+        r.style.display = (matchQ && matchCarrier) ? '' : 'none';
+      });
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "priceincreases",
+  "version": "1.0.0",
+  "description": "Despatch Cloud Billing API Pricing Increase Manager & January 1st Scheduler",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "keywords": [
+    "billing",
+    "pricing",
+    "despatchcloud",
+    "couriers",
+    "railway"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.1"
+  }
+}
