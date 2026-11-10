@@ -81,7 +81,10 @@
     <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
       <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Projected Increase Impact</div>
       <div class="text-2xl font-bold text-emerald-400" id="stat-diff">+£0.00</div>
-      <div class="text-xs text-gray-400 mt-1">Average Applied: <span class="text-white font-medium" id="stat-avg-pct">+0.00%</span></div>
+      <div class="text-xs text-gray-400 mt-1 flex items-center justify-between">
+        <span>Average: <span class="text-white font-medium" id="stat-avg-pct">+0.00%</span></span>
+        <span class="text-[11px] text-gray-400"><span id="stat-eligible" class="text-blue-400 font-medium">0 Active</span> • <span id="stat-exempt" class="text-amber-400 font-medium">0 Exempt</span></span>
+      </div>
     </div>
 
     <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 flex flex-col justify-between">
@@ -422,13 +425,20 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         const data = await res.json();
         const active = data.counts.activeInvoicedCustomers || data.counts.customers;
         const excluded = data.counts.excludedInactiveCustomers || 0;
-        document.getElementById('stat-customers').innerText = active;
-        document.getElementById('stat-active-invoiced').innerText = `${active} Active`;
-        document.getElementById('stat-excluded-stale').innerText = `${excluded} Excluded (>12m)`;
-        document.getElementById('stat-couriers').innerText = data.counts.couriers + ' Couriers';
-        document.getElementById('stat-rates').innerText = data.counts.rates;
-        document.getElementById('badge-campaign-status').innerText = data.campaign.status;
-        document.getElementById('db-badge').innerText = data.dbDriver.toUpperCase() + ' Mode';
+        const elCust = document.getElementById('stat-customers');
+        if (elCust) elCust.innerText = active;
+        const elAct = document.getElementById('stat-active-invoiced');
+        if (elAct) elAct.innerText = `${active} Active`;
+        const elExcl = document.getElementById('stat-excluded-stale');
+        if (elExcl) elExcl.innerText = `${excluded} Excluded (>12m)`;
+        const elCour = document.getElementById('stat-couriers');
+        if (elCour) elCour.innerText = (data.counts.couriers || 0) + ' Couriers';
+        const elRates = document.getElementById('stat-rates');
+        if (elRates) elRates.innerText = data.counts.rates || 0;
+        const elStatus = document.getElementById('badge-campaign-status');
+        if (elStatus) elStatus.innerText = data.campaign.status;
+        const elDb = document.getElementById('db-badge');
+        if (elDb) elDb.innerText = data.dbDriver.toUpperCase() + ' Mode';
 
         if (document.getElementById('toggle-invoice-gate')) {
           document.getElementById('toggle-invoice-gate').checked = data.campaign.excludeNoInvoice12m;
@@ -600,14 +610,17 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
 
       const cust = allCustomersList.find(c => c.dc_id === dcId);
       if (cust) {
-        document.getElementById('banner-cust-name').textContent = cust.name || 'Unnamed';
-        document.getElementById('banner-cust-id').textContent = cust.dc_id;
+        const nameEl = document.getElementById('banner-cust-name');
+        if (nameEl) nameEl.textContent = cust.name || 'Unnamed';
+        const idEl = document.getElementById('banner-cust-id');
+        if (idEl) idEl.textContent = '';
         const isExcluded = Number(cust.is_inactive_excluded) === 1;
         const statusText = isExcluded
           ? '🚫 Excluded (No invoice in last 12 months)'
           : (cust.is_exempt ? 'Exempt (0%)' : 'Standard Rate');
         const invInfo = cust.last_invoice_date ? `Last Invoiced: ${new Date(cust.last_invoice_date).toLocaleDateString()}` : 'Never Invoiced';
-        document.getElementById('banner-cust-meta').textContent = `${invInfo} • Status: ${statusText}`;
+        const metaEl = document.getElementById('banner-cust-meta');
+        if (metaEl) metaEl.textContent = `${invInfo} • Status: ${statusText}`;
         banner.classList.remove('hidden');
       } else {
         banner.classList.add('hidden');
@@ -666,10 +679,17 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         const res = await fetch('/api/rates/preview?' + params.toString());
         const data = await res.json();
 
-        document.getElementById('stat-diff').innerText = '+£' + Number(data.summary.totalDifference).toLocaleString();
-        document.getElementById('stat-avg-pct').innerText = '+' + data.summary.averageIncreasePercent + '%';
-        document.getElementById('stat-eligible').innerText = (data.summary.totalRates - data.summary.exemptRates) + ' Active';
-        document.getElementById('stat-exempt').innerText = data.summary.exemptRates + ' Exempt (0%)';
+        const statDiff = document.getElementById('stat-diff');
+        if (statDiff && data.summary) statDiff.innerText = '+£' + Number(data.summary.totalDifference || 0).toLocaleString();
+        
+        const statAvg = document.getElementById('stat-avg-pct');
+        if (statAvg && data.summary) statAvg.innerText = '+' + (data.summary.averageIncreasePercent || '0.00') + '%';
+        
+        const statEligible = document.getElementById('stat-eligible');
+        if (statEligible && data.summary) statEligible.innerText = ((data.summary.totalRates || 0) - (data.summary.exemptRates || 0)) + ' Active';
+        
+        const statExempt = document.getElementById('stat-exempt');
+        if (statExempt && data.summary) statExempt.innerText = (data.summary.exemptRates || 0) + ' Exempt (0%)';
 
         tbody.innerHTML = '';
         if (!data.rates || data.rates.length === 0) {
