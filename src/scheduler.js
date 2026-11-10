@@ -243,16 +243,34 @@ class PricingScheduler {
           }
 
           this.progress.success++;
+          const auditDetails = JSON.stringify({
+            count: payloadPrices.length,
+            payload: payloadPrices,
+            result: 'SUCCESS'
+          });
           await db.query(
             'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
-            ['PRICE_UPDATE_SUCCESS', dcId, `Updated ${custRates.length} rates`, 'SUCCESS', new Date().toISOString()]
+            ['PRICE_UPDATE_SUCCESS', dcId, auditDetails, 'SUCCESS', new Date().toISOString()]
+          );
+          await db.query(
+            'UPDATE customers SET last_pushed_at = ?, last_pushed_status = ? WHERE dc_id = ?',
+            [new Date().toISOString(), 'success', dcId]
           );
         } catch (err) {
           this.progress.failed++;
           console.error(`[Scheduler] Failed updating customer ${dcId}:`, err.message);
+          const failDetails = JSON.stringify({
+            count: payloadPrices ? payloadPrices.length : 0,
+            payload: payloadPrices || [],
+            error: err.message
+          });
           await db.query(
             'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
-            ['PRICE_UPDATE_FAILED', dcId, `Error: ${err.message}`, 'FAILED', new Date().toISOString()]
+            ['PRICE_UPDATE_FAILED', dcId, failDetails, 'FAILED', new Date().toISOString()]
+          );
+          await db.query(
+            'UPDATE customers SET last_pushed_at = ?, last_pushed_status = ? WHERE dc_id = ?',
+            [new Date().toISOString(), 'failed', dcId]
           );
         }
 

@@ -47,56 +47,72 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
+async function syncFromBillingApi() {
+  console.log('[Sync] Fetching customers and couriers from Billing API...');
+  const [customers, couriers, services] = await Promise.all([
+    billingApi.getCustomers(),
+    billingApi.getCouriers(),
+    billingApi.getCourierServices()
+  ]);
+
+  const existingCusts = await db.query('SELECT dc_id FROM customers');
+  const existingDcIds = new Set(existingCusts.map(c => c.dc_id));
+  const isInitialLoad = existingCusts.length === 0;
+
+  // Save customers
+  for (const c of customers) {
+    if (!c.dc_id) continue;
+    const isNew = !isInitialLoad && !existingDcIds.has(c.dc_id);
+    const idCol = db.dbDriver === 'postgres'
+      ? 'INSERT INTO customers (id, dc_id, name, email, created_at, billing_period, is_new_customer) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dc_id) DO UPDATE SET name=EXCLUDED.name, email=EXCLUDED.email, billing_period=EXCLUDED.billing_period'
+      : 'INSERT OR REPLACE INTO customers (id, dc_id, name, email, created_at, billing_period, is_new_customer) VALUES (?, ?, ?, ?, ?, ?, ?)';
+    await db.query(idCol, [c.id, c.dc_id, c.name, c.email || '', c.created_at, c.billing_period || 'weekly', isNew ? 1 : 0]);
+  }
+
+  // Save couriers
+  for (const cr of couriers) {
+    const crSql = db.dbDriver === 'postgres'
+      ? 'INSERT INTO couriers (id, name, code) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code'
+      : 'INSERT OR REPLACE INTO couriers (id, name, code) VALUES (?, ?, ?)';
+    await db.query(crSql, [cr.id, cr.name, cr.code]);
+  }
+
+  // Save services
+  for (const s of services) {
+    const sSql = db.dbDriver === 'postgres'
+      ? 'INSERT INTO courier_services (id, courier_id, name, code) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code'
+      : 'INSERT OR REPLACE INTO courier_services (id, courier_id, name, code) VALUES (?, ?, ?, ?)';
+    await db.query(sSql, [s.id, s.client_courier_id, s.name, s.code]);
+  }
+
+  // Audit customer invoices (12-month inactivity exclusion)
+  const auditResult = await auditCustomerInvoices(customers);
+
+  // Populate baseline rates for active customers
+  const activeCusts = customers.filter(c => c.is_inactive_excluded !== 1);
+  await ensureRatesForCustomers(activeCusts);
+
+  const nowIso = new Date().toISOString();
+  const upsertSql = db.dbDriver === 'postgres'
+    ? 'INSERT INTO campaign_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
+    : 'INSERT OR REPLACE INTO campaign_settings (key, value) VALUES (?, ?)';
+  await db.query(upsertSql, ['last_sync_time', nowIso]);
+
+  return {
+    customersSynced: customers.length,
+    activeInvoicedCustomers: auditResult.activeCount,
+    excludedInactiveCustomers: auditResult.excludedCount,
+    couriersSynced: couriers.length,
+    servicesSynced: services.length,
+    lastSyncTime: nowIso
+  };
+}
+
 // 2. Full Sync from Billing API
 app.post('/api/sync', async (req, res) => {
   try {
-    console.log('[Sync] Fetching customers and couriers from Billing API...');
-    const [customers, couriers, services] = await Promise.all([
-      billingApi.getCustomers(),
-      billingApi.getCouriers(),
-      billingApi.getCourierServices()
-    ]);
-
-    // Save customers
-    for (const c of customers) {
-      if (!c.dc_id) continue;
-      const idCol = db.dbDriver === 'postgres'
-        ? 'INSERT INTO customers (id, dc_id, name, email, created_at, billing_period) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (dc_id) DO UPDATE SET name=EXCLUDED.name, email=EXCLUDED.email, billing_period=EXCLUDED.billing_period'
-        : 'INSERT OR REPLACE INTO customers (id, dc_id, name, email, created_at, billing_period) VALUES (?, ?, ?, ?, ?, ?)';
-      await db.query(idCol, [c.id, c.dc_id, c.name, c.email || '', c.created_at, c.billing_period || 'weekly']);
-    }
-
-    // Save couriers
-    for (const cr of couriers) {
-      const crSql = db.dbDriver === 'postgres'
-        ? 'INSERT INTO couriers (id, name, code) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code'
-        : 'INSERT OR REPLACE INTO couriers (id, name, code) VALUES (?, ?, ?)';
-      await db.query(crSql, [cr.id, cr.name, cr.code]);
-    }
-
-    // Save services
-    for (const s of services) {
-      const sSql = db.dbDriver === 'postgres'
-        ? 'INSERT INTO courier_services (id, courier_id, name, code) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code'
-        : 'INSERT OR REPLACE INTO courier_services (id, courier_id, name, code) VALUES (?, ?, ?, ?)';
-      await db.query(sSql, [s.id, s.client_courier_id, s.name, s.code]);
-    }
-
-    // Audit customer invoices (12-month inactivity exclusion)
-    const auditResult = await auditCustomerInvoices(customers);
-
-    // Populate baseline rates for active customers
-    const activeCusts = customers.filter(c => c.is_inactive_excluded !== 1);
-    await ensureRatesForCustomers(activeCusts);
-
-    res.json({
-      success: true,
-      customersSynced: customers.length,
-      activeInvoicedCustomers: auditResult.activeCount,
-      excludedInactiveCustomers: auditResult.excludedCount,
-      couriersSynced: couriers.length,
-      servicesSynced: services.length
-    });
+    const result = await syncFromBillingApi();
+    res.json({ success: true, ...result });
   } catch (err) {
     console.error('[Sync] Failed:', err);
     res.status(500).json({ error: err.message });
@@ -207,6 +223,9 @@ app.get('/api/customers/stats', async (req, res) => {
     const exempt = active.filter(c => Number(c.is_exempt) === 1);
     const custom = active.filter(c => !c.is_exempt && c.custom_increase_pct !== null && c.custom_increase_pct !== undefined);
     const standard = active.filter(c => !c.is_exempt && (c.custom_increase_pct === null || c.custom_increase_pct === undefined));
+    const pushed = active.filter(c => c.last_pushed_at && c.last_pushed_status === 'success');
+    const pending = active.filter(c => !c.is_exempt && !c.last_pushed_at);
+    const newCustomers = active.filter(c => Number(c.is_new_customer) === 1);
 
     res.json({
       total: list.length,
@@ -214,7 +233,10 @@ app.get('/api/customers/stats', async (req, res) => {
       dormant: dormant.length,
       standard: standard.length,
       exempt: exempt.length,
-      custom: custom.length
+      custom: custom.length,
+      pushed: pushed.length,
+      pending: pending.length,
+      newCustomers: newCustomers.length
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -440,12 +462,35 @@ async function handleSandboxPushRates(req, res) {
     }
 
     const result = await billingApi.updateCustomerPrices(testDcId, pricesToPush);
+    const auditDetails = JSON.stringify({
+      count: pricesToPush.length,
+      payload: pricesToPush,
+      response: result
+    });
     await db.query(
       'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
-      ['SANDBOX_UPDATE_PRICES', testDcId, JSON.stringify({ count: pricesToPush.length, result }), 'SUCCESS', new Date().toISOString()]
+      ['PRICE_PUSH', testDcId, auditDetails, 'SUCCESS', new Date().toISOString()]
+    );
+    await db.query(
+      'UPDATE customers SET last_pushed_at = ?, last_pushed_status = ? WHERE dc_id = ?',
+      [new Date().toISOString(), 'success', testDcId]
     );
     res.json({ success: true, customer_dc_id: testDcId, ratesUpdated: pricesToPush.length, pricesSent: pricesToPush, result });
   } catch (err) {
+    const errorDetails = JSON.stringify({
+      count: pricesToPush ? pricesToPush.length : 0,
+      payload: pricesToPush || [],
+      error: err.message,
+      data: err.data
+    });
+    await db.query(
+      'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['PRICE_PUSH_FAILED', testDcId, errorDetails, 'FAILED', new Date().toISOString()]
+    );
+    await db.query(
+      'UPDATE customers SET last_pushed_at = ?, last_pushed_status = ? WHERE dc_id = ?',
+      [new Date().toISOString(), 'failed', testDcId]
+    );
     res.status(err.status || 500).json({ error: err.message, data: err.data });
   }
 }
@@ -551,8 +596,11 @@ async function auditCustomerInvoices(customers) {
 
       // Rule 1: All customers with DC ID starting with HOF are excluded
       const isHof = (c.dc_id || '').toUpperCase().startsWith('HOF');
+      const isTest = (c.dc_id || '').toLowerCase().includes('test') || (c.name || '').toLowerCase().includes('test');
 
-      if (!isHof) {
+      if (isTest) {
+        isExcluded = 0;
+      } else if (!isHof) {
         try {
           const invRes = await billingApi.getCustomerInvoices(c.dc_id);
           const invs = invRes.data || (Array.isArray(invRes) ? invRes : []);
@@ -629,8 +677,15 @@ async function start() {
   });
 
   try {
-    const custs = await db.query('SELECT * FROM customers');
-    if (custs.length > 0) {
+    let custs = await db.query('SELECT * FROM customers');
+    if (custs.length === 0) {
+      console.log('[RateShift] Database empty. Running initial sync from Billing API...');
+      syncFromBillingApi().then(res => {
+        console.log(`[RateShift] Initial sync complete: ${res.customersSynced} customers loaded.`);
+      }).catch(err => {
+        console.warn('[RateShift] Initial auto-sync error:', err.message);
+      });
+    } else {
       const needsAudit = custs.some(c => 
         c.is_inactive_excluded === undefined || 
         c.is_inactive_excluded === null || 

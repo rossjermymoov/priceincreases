@@ -27,6 +27,13 @@ class JsonStore {
       if (fs.existsSync(this.filePath)) {
         this.data = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
       }
+      if (!this.data.customers || this.data.customers.length === 0) {
+        const seedPath = path.join(path.dirname(this.filePath), 'seed.json');
+        if (fs.existsSync(seedPath)) {
+          this.data = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+          this.save();
+        }
+      }
     } catch (e) {
       console.warn('[JsonStore] Failed to read store file, using in-memory default:', e.message);
     }
@@ -243,6 +250,18 @@ async function query(sql, params = []) {
     return [];
   }
 
+  if (lower.startsWith('update customers set last_pushed_at')) {
+    const [last_pushed_at, last_pushed_status, dc_id] = params;
+    const c = store.data.customers.find(x => x.dc_id === dc_id);
+    if (c) {
+      c.last_pushed_at = last_pushed_at;
+      c.last_pushed_status = last_pushed_status;
+      c.is_new_customer = 0;
+      store.save();
+    }
+    return [];
+  }
+
   if (lower.startsWith('update customers set last_invoice_date')) {
     const [last_invoice_date, total_invoices, is_inactive_excluded, dc_id] = params;
     const c = store.data.customers.find(x => x.dc_id === dc_id);
@@ -336,6 +355,9 @@ async function initDb() {
         created_at TEXT
       );
       ALTER TABLE pricing_rules ADD COLUMN IF NOT EXISTS fixed_markup_pence REAL DEFAULT 0.0;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_pushed_at TEXT;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_pushed_status TEXT;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_new_customer INTEGER DEFAULT 0;
     `);
   }
 
