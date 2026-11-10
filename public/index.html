@@ -382,6 +382,34 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       }
     }
 
+    function getCarrierInfo(name, code) {
+      const n = (name || '').toLowerCase();
+      const c = (code || '').toLowerCase();
+
+      if (n.includes('dpd') || c === 'dpd') {
+        return { name: 'DPD', logo: '/logos/dpd.svg', bg: 'bg-white' };
+      }
+      if (n.includes('yodel') || c.includes('yod')) {
+        return { name: 'Yodel', logo: '/logos/yodel.svg', bg: 'bg-white' };
+      }
+      if (n.includes('royal mail') || c === 'rm') {
+        return { name: 'Royal Mail', logo: '/logos/royalmail.svg', bg: 'bg-[#DA202A]' };
+      }
+      if (n.includes('evri') || c.includes('evri')) {
+        return { name: 'EvRi', logo: '/logos/evri.png', bg: 'bg-white' };
+      }
+      if (n.includes('dhl') || c.includes('dhl')) {
+        return { name: 'DHL Ecommerce', logo: '/logos/dhl.svg', bg: 'bg-[#FFCC00]' };
+      }
+      if (n.includes('ups') || c.includes('ups')) {
+        return { name: 'UPS', logo: '/logos/ups.svg', bg: 'bg-white' };
+      }
+      if (n.includes('inpost') || c.includes('inpost')) {
+        return { name: 'InPost', logo: '/logos/inpost.svg', bg: 'bg-[#FFCC00]' };
+      }
+      return { name: name || code, logo: null, bg: 'bg-gray-800' };
+    }
+
     async function loadRules() {
       try {
         const res = await fetch('/api/rules');
@@ -392,18 +420,18 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         const container = document.getElementById('carrier-rules-container');
         container.innerHTML = '';
         rulesData.forEach(r => {
+          const info = getCarrierInfo(r.carrier_name, r.carrier_code);
           const div = document.createElement('div');
-          div.className = 'p-3.5 bg-gray-900/60 rounded-lg border border-gray-800 flex flex-col md:flex-row md:items-center justify-between gap-4';
+          div.className = 'p-3.5 bg-gray-900/60 rounded-xl border border-gray-800 hover:border-gray-700 flex flex-col md:flex-row md:items-center justify-between gap-4 transition';
           div.innerHTML = `
-            <div class="flex items-center gap-3">
-              <span class="w-8 h-8 rounded bg-blue-600/20 text-blue-400 font-bold flex items-center justify-center text-xs border border-blue-500/30">${r.carrier_code || r.carrier_name.substring(0, 3)}</span>
-              <div>
-                <div class="font-medium text-sm text-white">${r.carrier_name}</div>
-                <div class="text-xs text-gray-400">Carrier Code: ${r.carrier_code}</div>
+            <div class="flex items-center gap-4">
+              <div class="w-20 h-11 ${info.bg} rounded-lg flex items-center justify-center p-2 shadow-sm border border-gray-700/60 overflow-hidden flex-shrink-0">
+                ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-full max-w-full object-contain" />` : `<span class="font-bold text-xs text-white">${info.name}</span>`}
               </div>
+              <div class="font-semibold text-sm text-white">${info.name}</div>
             </div>
             <div class="flex items-center gap-3">
-              <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent}" class="w-32 accent-blue-500" id="slider-${r.carrier_name}" oninput="document.getElementById('val-${r.carrier_name}').innerText = this.value + '%'">
+              <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent}" class="w-36 accent-blue-500" id="slider-${r.carrier_name}" oninput="document.getElementById('val-${r.carrier_name}').innerText = this.value + '%'">
               <div class="w-16 text-right font-mono font-bold text-sm text-blue-400" id="val-${r.carrier_name}">${r.increase_percent}%</div>
             </div>
           `;
@@ -449,12 +477,19 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         }
 
         data.rates.forEach(r => {
+          const info = getCarrierInfo(r.courier_code, r.courier_code);
           const tr = document.createElement('tr');
           tr.className = 'hover:bg-gray-800/40';
           tr.innerHTML = `
             <td class="p-3 font-bold text-white">${r.customer_dc_id}</td>
             <td class="p-3 font-sans text-gray-200 font-medium">${r.customer_name}</td>
-            <td class="p-3 font-sans"><span class="badge bg-blue-600/20 text-blue-300">${r.courier_code}</span> <span class="text-gray-400">${r.service_name}</span></td>
+            <td class="p-3 font-sans">
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-gray-800/90 border border-gray-700 text-xs">
+                ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="h-3.5 max-w-[36px] object-contain inline-block" />` : ''}
+                <span class="text-gray-200 font-medium">${info.name}</span>
+              </span>
+              <span class="text-gray-400 ml-1.5">${r.service_name}</span>
+            </td>
             <td class="p-3 font-sans text-gray-400">${r.zone_name} (${r.weight_band})</td>
             <td class="p-3 text-right text-gray-300">£${(r.old_price / 100).toFixed(2)}</td>
             <td class="p-3 text-right ${r.applied_percent > 0 ? 'text-blue-400 font-bold' : 'text-gray-500'}">+${r.applied_percent.toFixed(1)}%</td>
