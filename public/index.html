@@ -237,19 +237,18 @@
         <table class="w-full text-left text-xs" id="rate-table">
           <thead class="bg-gray-900/80 text-[var(--muted-foreground)] uppercase tracking-wider text-[10px] border-b border-[var(--border)]">
             <tr>
-              <th class="p-3">DC ID</th>
-              <th class="p-3">Customer Name</th>
-              <th class="p-3">Carrier / Service</th>
-              <th class="p-3">Zone & Weight Band</th>
-              <th class="p-3 text-right">Current Price</th>
-              <th class="p-3 text-right">Applied %</th>
-              <th class="p-3 text-right">New Price</th>
-              <th class="p-3 text-right">Diff (£)</th>
-              <th class="p-3 text-center">Eligibility / Status</th>
+              <th class="p-3 font-semibold text-gray-300">Customer Name</th>
+              <th class="p-3 font-semibold text-gray-300 min-w-[280px]">Carrier & Service</th>
+              <th class="p-3 font-semibold text-gray-300">Zone & Weight Band</th>
+              <th class="p-3 text-right font-semibold text-gray-300">Current Price</th>
+              <th class="p-3 text-right font-semibold text-gray-300">Applied %</th>
+              <th class="p-3 text-right font-semibold text-gray-300">New Price</th>
+              <th class="p-3 text-right font-semibold text-gray-300">Diff (£)</th>
+              <th class="p-3 text-center font-semibold text-gray-300">Eligibility / Status</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800 font-mono text-xs" id="table-body">
-            <tr><td colspan="9" class="p-6 text-center text-gray-500">Loading rate cards and calculating differentials...</td></tr>
+            <tr><td colspan="8" class="p-6 text-center text-gray-500">Loading rate cards and calculating differentials...</td></tr>
           </tbody>
         </table>
       </div>
@@ -473,10 +472,10 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       const c = (code || '').toLowerCase();
 
       if (n.includes('dpd') || c === 'dpd') {
-        return { name: 'DPD', logo: '/logos/dpd.svg', bg: 'bg-white' };
+        return { name: 'DPD', logo: '/logos/dpd.svg', bg: 'bg-[#18181b]' };
       }
       if (n.includes('yodel') || c.includes('yod')) {
-        return { name: 'Yodel', logo: '/logos/yodel.svg', bg: 'bg-white' };
+        return { name: 'Yodel', logo: '/logos/yodel.svg', bg: 'bg-[#18181b]' };
       }
       if (n.includes('royal mail') || c === 'rm') {
         return { name: 'Royal Mail', logo: '/logos/royalmail.svg', bg: 'bg-[#DA202A]' };
@@ -674,25 +673,25 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
 
         tbody.innerHTML = '';
         if (!data.rates || data.rates.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-400">No matching rates found. Try selecting another customer or clearing the search.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">No matching rates found. Try selecting another customer or clearing the search.</td></tr>';
           return;
         }
 
         data.rates.forEach(r => {
           const info = getCarrierInfo(r.courier_code, r.courier_code);
           const tr = document.createElement('tr');
-          tr.className = 'hover:bg-gray-800/40';
+          tr.className = 'hover:bg-gray-800/40 transition-colors';
           tr.innerHTML = `
-            <td class="p-3 font-bold text-white">${r.customer_dc_id}</td>
-            <td class="p-3 font-sans text-gray-200 font-medium">${r.customer_name}</td>
-            <td class="p-3 font-sans">
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-gray-800/90 border border-gray-700 text-xs">
-                ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="h-3.5 max-w-[36px] object-contain inline-block" />` : ''}
-                <span class="text-gray-200 font-medium">${info.name}</span>
-              </span>
-              <span class="text-gray-400 ml-1.5">${r.service_name}</span>
+            <td class="p-3 font-sans text-white font-medium text-xs">${r.customer_name}</td>
+            <td class="p-3 font-sans whitespace-nowrap">
+              <div class="flex items-center gap-3">
+                <div class="w-16 h-7 bg-black/60 border border-gray-700/80 rounded-md p-1 flex items-center justify-center flex-shrink-0 shadow-sm">
+                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-full max-w-full object-contain" />` : `<span class="font-bold text-[10px] text-white">${info.name}</span>`}
+                </div>
+                <span class="text-gray-100 font-semibold text-xs whitespace-nowrap">${r.service_name}</span>
+              </div>
             </td>
-            <td class="p-3 font-sans text-gray-400">${r.zone_name} (${r.weight_band})</td>
+            <td class="p-3 font-sans text-gray-400 whitespace-nowrap">${r.zone_name} (${r.weight_band})</td>
             <td class="p-3 text-right text-gray-300">£${(r.old_price / 100).toFixed(2)}</td>
             <td class="p-3 text-right ${r.applied_percent > 0 ? 'text-blue-400 font-bold' : 'text-gray-500'}">+${r.applied_percent.toFixed(1)}%</td>
             <td class="p-3 text-right ${r.diff_pence > 0 ? 'text-emerald-400 font-bold' : 'text-gray-300'}">£${(r.new_price / 100).toFixed(2)}</td>
@@ -704,7 +703,7 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
           tbody.appendChild(tr);
         });
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-red-400">${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-400">${e.message}</td></tr>`;
       }
     }
 
