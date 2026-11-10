@@ -3,357 +3,288 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RateShift — January Pricing & Courier Increase Manager</title>
+  <title>RateShift — January Rate Increase & Exclusion Engine</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      --background: #0b0f19;
+      --bg: #0b0f19;
       --card: #111827;
       --card-border: #1f2937;
       --border: #374151;
       --foreground: #f9fafb;
-      --muted-foreground: #9ca3af;
-      --primary: #3b82f6;
     }
     body {
-      background-color: var(--background);
+      background-color: var(--bg);
       color: var(--foreground);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
     .badge {
-      padding: 0.15rem 0.5rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.2rem 0.55rem;
       border-radius: 9999px;
       font-size: 0.72rem;
       font-weight: 600;
     }
   </style>
 </head>
-<body class="p-6 min-h-screen">
+<body class="p-4 sm:p-6 min-h-screen max-w-7xl mx-auto">
 
-  <!-- Top Navigation & Header -->
-  <header class="flex flex-col md:flex-row md:items-center justify-between pb-6 mb-6 border-b border-[var(--card-border)] gap-4">
-    <div>
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg font-bold text-white text-lg">
-          ⚡
-        </div>
-        <div>
-          <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            RateShift <span class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono" id="db-badge">SQLite Local</span>
-          </h1>
-          <p class="text-xs text-[var(--muted-foreground)]">Despatch Cloud Billing API & Pricing Scheduling Console</p>
-        </div>
+  <!-- Header -->
+  <header class="flex flex-col md:flex-row md:items-center justify-between pb-5 mb-6 border-b border-gray-800 gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg font-bold text-white text-lg">
+        ⚡
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+          RateShift <span class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono" id="db-badge">Ready</span>
+        </h1>
+        <p class="text-xs text-gray-400">January Rate Increase & Customer Exclusion Engine</p>
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-3">
-      <button onclick="triggerSync()" id="btn-sync" class="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg transition font-medium">
-        <span>🔄</span> Sync From Billing API
+    <div class="flex flex-wrap items-center gap-2.5">
+      <button onclick="triggerSync()" id="btn-sync" class="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg transition font-medium">
+        <span>🔄</span> Refresh from Billing API
       </button>
+      <a href="/api/export-csv" download class="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg transition font-medium">
+        <span>📥</span> Export Diff CSV
+      </a>
       <div class="flex items-center gap-2 text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-3 py-1.5 rounded-lg">
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span id="sync-status-text">Connected</span>
-      </div>
-      <div class="text-xs bg-[var(--card)] border border-[var(--border)] px-3 py-1.5 rounded-lg text-gray-300">
-        Target: <strong class="text-white" id="target-date-display">Jan 1, 2027 00:01 UTC</strong>
+        <span>Billing API Connected</span>
       </div>
     </div>
   </header>
 
-  <!-- Quick Stat Bar -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
-      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Active Customers (12m)</div>
-      <div class="text-2xl font-bold text-white" id="stat-customers">...</div>
-      <div class="text-xs mt-1 flex items-center gap-1.5" id="stat-cust-sub">
-        <span class="text-emerald-400 font-medium" id="stat-active-invoiced">...</span>
-        <span class="text-gray-500">•</span>
-        <span class="text-amber-400 font-medium" id="stat-excluded-stale">...</span>
-      </div>
+  <!-- Clean Top Metrics -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
+    <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-4">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">Active Customers To Bill</div>
+      <div class="text-2xl font-bold text-white mt-1" id="stat-active">...</div>
+      <div class="text-xs text-gray-500 mt-1" id="stat-dormant-desc">231 dormant accounts excluded (&gt;12m)</div>
     </div>
 
-    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
-      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Configured Couriers</div>
-      <div class="text-2xl font-bold text-white" id="stat-couriers">12</div>
-      <div class="text-xs text-gray-400 mt-1"><span id="stat-rates">...</span> Rate Cards Staged</div>
+    <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-4 cursor-pointer hover:border-blue-500/50 transition" onclick="setCustomerFilterTab('standard')">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">Standard Base Increase</div>
+      <div class="text-2xl font-bold text-blue-400 mt-1" id="stat-standard">...</div>
+      <div class="text-xs text-gray-400 mt-1">Receiving courier base %</div>
     </div>
 
-    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
-      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Projected Increase Impact</div>
-      <div class="text-2xl font-bold text-emerald-400" id="stat-diff">+£0.00</div>
-      <div class="text-xs text-gray-400 mt-1 flex items-center justify-between">
-        <span>Average: <span class="text-white font-medium" id="stat-avg-pct">+0.00%</span></span>
-        <span class="text-[11px] text-gray-400"><span id="stat-eligible" class="text-blue-400 font-medium">0 Active</span> • <span id="stat-exempt" class="text-amber-400 font-medium">0 Exempt</span></span>
-      </div>
+    <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-4 cursor-pointer hover:border-amber-500/50 transition" onclick="setCustomerFilterTab('exempt')">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">Excluded from Increase</div>
+      <div class="text-2xl font-bold text-amber-400 mt-1" id="stat-exempt">...</div>
+      <div class="text-xs text-amber-400/80 mt-1">0% Increase / Individual pricing</div>
     </div>
 
-    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 flex flex-col justify-between">
-      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider">Campaign Pipeline</div>
-      <div class="flex items-center gap-2 mt-1">
-        <span class="badge bg-amber-500/20 text-amber-300 border border-amber-500/30" id="badge-campaign-status">DRAFT</span>
-      </div>
-      <div class="text-xs text-gray-400 mt-1" id="campaign-status-desc">Ready for configuration & simulation</div>
+    <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-4">
+      <div class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">Active Couriers</div>
+      <div class="text-2xl font-bold text-white mt-1" id="stat-couriers">12</div>
+      <div class="text-xs text-gray-400 mt-1">DPD, Royal Mail, Yodel, EvRi + 8 more</div>
     </div>
   </div>
 
   <!-- Main Tabs -->
-  <div class="flex border-b border-[var(--card-border)] mb-6 text-sm gap-2">
-    <button onclick="setTab('rules')" id="tab-btn-rules" class="px-4 py-2 font-medium border-b-2 border-blue-500 text-blue-400 transition-colors">
-      1. Carrier Rules & Cutoff
+  <div class="flex border-b border-gray-800 mb-6 text-sm gap-2">
+    <button onclick="setTab('rules')" id="tab-btn-rules" class="px-4 py-2.5 font-semibold border-b-2 border-blue-500 text-blue-400 transition">
+      1. Carrier Base % Increases
     </button>
-    <button onclick="setTab('matrix')" id="tab-btn-matrix" class="px-4 py-2 font-medium border-b-2 border-transparent text-gray-400 hover:text-white transition-colors">
-      2. Price Matrix & Diff Inspector
+    <button onclick="setTab('customers')" id="tab-btn-customers" class="px-4 py-2.5 font-semibold border-b-2 border-transparent text-gray-400 hover:text-white transition flex items-center gap-2">
+      <span>2. Customer Exclusions & Custom Rates</span>
+      <span class="badge bg-amber-500/20 text-amber-300 font-mono" id="tab-badge-exempt">0 Excluded</span>
     </button>
-    <button onclick="setTab('sandbox')" id="tab-btn-sandbox" class="px-4 py-2 font-medium border-b-2 border-transparent text-gray-400 hover:text-white transition-colors">
-      3. Fake Customer Testing Sandbox
-    </button>
-    <button onclick="setTab('deploy')" id="tab-btn-deploy" class="px-4 py-2 font-medium border-b-2 border-transparent text-gray-400 hover:text-white transition-colors">
-      4. Live Execution & Logs
+    <button onclick="setTab('push')" id="tab-btn-push" class="px-4 py-2.5 font-semibold border-b-2 border-transparent text-gray-400 hover:text-white transition">
+      3. Test & Push Rates to Billing API
     </button>
   </div>
 
-  <!-- TAB 1: RULES CONFIGURATION -->
+  <!-- ========================================== -->
+  <!-- TAB 1: CARRIER BASE % INCREASES -->
+  <!-- ========================================== -->
   <div id="tab-rules" class="space-y-6">
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left 2 Cols: Carrier Increase Sliders -->
-      <div class="lg:col-span-2 bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-5">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-base font-semibold text-white">Carrier Price Increase Rules</h2>
-            <p class="text-xs text-[var(--muted-foreground)]">Specify the price increase percentage per carrier for January 1st.</p>
-          </div>
-          <button onclick="saveRules()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition">
-            Save Rule Settings
-          </button>
+    <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-5 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-800/80 pb-4">
+        <div>
+          <h2 class="text-base font-bold text-white">Across-The-Board Courier Increases</h2>
+          <p class="text-xs text-gray-400 mt-0.5">Set the January percentage increase to apply per courier for all standard customers.</p>
         </div>
-
-        <div class="space-y-4 pt-2" id="carrier-rules-container">
-          <!-- Dynamic carrier sliders injected by JavaScript -->
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-800 text-xs">
+            <span class="text-gray-400">Introductory Exemption Cutoff:</span>
+            <input type="date" id="cutoff-date-input" value="2026-09-01" class="bg-gray-800 text-white border border-gray-700 rounded px-2 py-0.5 text-xs font-mono">
+          </div>
+          <button onclick="saveRules()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs px-4 py-2 rounded-lg transition shadow-md">
+            Save Base Rates
+          </button>
         </div>
       </div>
 
-      <!-- Right Col: Customer Eligibility & Exemption Rules -->
-      <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-5">
-        <div>
-          <h2 class="text-base font-semibold text-white">Customer Eligibility Rules</h2>
-          <p class="text-xs text-[var(--muted-foreground)]">Exempt customers based on joining date or bespoke contracts.</p>
-        </div>
-
-        <div class="space-y-4 pt-2">
-          <!-- 12-Month Inactive Customer Gate -->
-          <div class="p-3 bg-gray-900 border border-gray-700/80 rounded-lg space-y-2">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="text-base">🛡️</span>
-                <div>
-                  <div class="text-xs font-semibold text-white">12-Month Inactivity Gate</div>
-                  <div class="text-[10px] text-gray-400">Exclude accounts with no invoice in the last 12 months</div>
-                </div>
-              </div>
-              <input type="checkbox" id="toggle-invoice-gate" checked class="w-4 h-4 accent-blue-600 rounded cursor-pointer" onchange="toggleInvoiceGate(this.checked)">
-            </div>
-            <div class="text-[11px] text-emerald-400 font-mono" id="gate-status-text">
-              ✓ Active: Customers without an invoice in last 12 months are completely excluded.
-            </div>
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium text-gray-300">Join Date Exemption Cutoff</label>
-            <input type="date" id="cutoff-date-input" value="2026-09-01" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500" onchange="saveRules()">
-            <p class="text-[11px] text-gray-400">Customers joined after this date receive <strong class="text-amber-400">0% increase</strong> (locked introductory rate).</p>
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium text-gray-300">Scheduled Target Date</label>
-            <input type="datetime-local" id="sched-date-input" value="2027-01-01T00:01" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
-          </div>
-
-          <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-            <div class="text-xs font-semibold text-blue-300 mb-1">Safety Notice</div>
-            <p class="text-xs text-gray-300">
-              Changes will not be pushed to Billing API until either the scheduled date triggers or you click "Run Batch Now" after testing.
-            </p>
-          </div>
-
-          <button onclick="setTab('matrix')" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-md">
-            Review Price Matrix & Diff →
-          </button>
-        </div>
+      <!-- Carrier Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1" id="carrier-rules-container">
+        <!-- Rendered dynamically -->
       </div>
     </div>
   </div>
 
-  <!-- TAB 2: CUSTOMER PRICE MATRIX & DIFF -->
-  <div id="tab-matrix" class="hidden space-y-4">
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
-      <div class="flex flex-wrap items-center gap-3 flex-1">
-        <!-- Customer Dropdown Selector -->
-        <div class="flex items-center gap-2 flex-1 min-w-[260px] max-w-[360px]">
-          <label for="cust-select-filter" class="text-xs text-gray-400 whitespace-nowrap font-medium">Customer:</label>
-          <select id="cust-select-filter" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500 font-medium" onchange="onCustomerSelectChanged()">
-            <option value="all">👥 All Customers (Loading...)</option>
-          </select>
+  <!-- ========================================== -->
+  <!-- TAB 2: CUSTOMER EXCLUSIONS & CUSTOM RATES -->
+  <!-- ========================================== -->
+  <div id="tab-customers" class="hidden space-y-4">
+    <!-- Filter Bar & Search -->
+    <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-4 space-y-3">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <!-- Filter Tabs -->
+        <div class="flex flex-wrap items-center gap-1.5 bg-gray-900/90 p-1 rounded-lg border border-gray-800 text-xs font-medium">
+          <button onclick="setCustomerFilterTab('all')" id="filter-btn-all" class="px-3 py-1.5 rounded-md bg-blue-600 text-white transition">
+            All Active (<span id="count-all">0</span>)
+          </button>
+          <button onclick="setCustomerFilterTab('standard')" id="filter-btn-standard" class="px-3 py-1.5 rounded-md text-gray-400 hover:text-white transition">
+            Standard Increase (<span id="count-standard">0</span>)
+          </button>
+          <button onclick="setCustomerFilterTab('exempt')" id="filter-btn-exempt" class="px-3 py-1.5 rounded-md text-gray-400 hover:text-white transition flex items-center gap-1.5">
+            <span>🚫 Excluded (0%)</span>
+            <span class="badge bg-amber-500/20 text-amber-300 font-mono" id="count-exempt">0</span>
+          </button>
+          <button onclick="setCustomerFilterTab('custom')" id="filter-btn-custom" class="px-3 py-1.5 rounded-md text-gray-400 hover:text-white transition">
+            Custom % (<span id="count-custom">0</span>)
+          </button>
         </div>
 
-        <!-- Search Customer Box -->
-        <div class="relative min-w-[220px]">
-          <input type="text" id="cust-search" placeholder="Search customer (e.g. Sherwood)..." class="bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white w-full focus:outline-none focus:border-blue-500" oninput="onSearchInputChanged()">
+        <!-- Search Bar -->
+        <div class="relative flex-1 max-w-md">
+          <input type="text" id="cust-search-input" placeholder="Search customer name (e.g. Sherwood, Total Insignia)..." 
+                 class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                 oninput="onCustomerSearch()">
           <span class="absolute left-2.5 top-1.5 text-gray-500 text-xs">🔍</span>
         </div>
-
-        <!-- Carrier Filter -->
-        <select id="cust-carrier-filter" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500" onchange="loadRatesPreview()">
-          <option value="all">All Carriers</option>
-        </select>
       </div>
 
-      <div class="flex items-center gap-2">
-        <button onclick="loadRatesPreview()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5">
-          <span>🔄</span> Re-calculate Rates
-        </button>
-        <a href="/api/export-csv" download class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-gray-700 flex items-center gap-1">
-          <span>📥</span> Export Diff CSV
-        </a>
+      <!-- Bulk Actions Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-800 text-xs">
+        <div class="flex items-center gap-2 text-gray-300 font-medium">
+          <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" class="w-4 h-4 rounded border-gray-700 bg-gray-900 text-blue-600 focus:ring-0">
+          <span id="selected-count-label">0 selected</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="bulkExemptSelected(true)" class="bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 px-3 py-1.5 rounded-lg font-medium transition">
+            🚫 Exclude Selected (0% Increase)
+          </button>
+          <button onclick="bulkExemptSelected(false)" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg font-medium transition">
+            ✓ Apply Standard Increase
+          </button>
+          <button onclick="bulkCustomPctPrompt()" class="bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 px-3 py-1.5 rounded-lg font-medium transition">
+            ✏️ Set Custom % for Selected
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Active Customer Info Banner -->
-    <div id="cust-active-banner" class="hidden px-4 py-2.5 bg-blue-950/40 border border-blue-800/50 rounded-xl text-xs flex items-center justify-between text-blue-200">
-      <div class="flex items-center gap-2">
-        <span class="text-sm">🏢</span>
-        <span id="banner-cust-name" class="font-semibold text-white"></span>
-        <span id="banner-cust-id" class="hidden"></span>
-        <span id="banner-cust-meta" class="text-gray-400 ml-2"></span>
-      </div>
-      <button onclick="resetCustomerFilter()" class="text-blue-400 hover:text-white underline text-xs font-medium">Show All Customers</button>
-    </div>
-
-    <!-- Table -->
-    <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl overflow-hidden shadow-lg">
+    <!-- Customers Table -->
+    <div class="bg-[var(--card)] border border-gray-800 rounded-xl overflow-hidden shadow-lg">
       <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs" id="rate-table">
-          <thead class="bg-gray-900/80 text-[var(--muted-foreground)] uppercase tracking-wider text-[10px] border-b border-[var(--border)]">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-gray-900/90 text-gray-400 uppercase tracking-wider text-[10px] border-b border-gray-800">
             <tr>
+              <th class="p-3 w-10 text-center"></th>
               <th class="p-3 font-semibold text-gray-300">Customer Name</th>
-              <th class="p-3 font-semibold text-gray-300 min-w-[280px]">Carrier & Service</th>
-              <th class="p-3 font-semibold text-gray-300">Zone & Weight Band</th>
-              <th class="p-3 text-right font-semibold text-gray-300">Current Price</th>
-              <th class="p-3 text-right font-semibold text-gray-300">Applied %</th>
-              <th class="p-3 text-right font-semibold text-gray-300">New Price</th>
-              <th class="p-3 text-right font-semibold text-gray-300">Diff (£)</th>
-              <th class="p-3 text-center font-semibold text-gray-300">Eligibility / Status</th>
+              <th class="p-3 font-semibold text-gray-300">Rate Increase Category</th>
+              <th class="p-3 font-semibold text-gray-300">Last Invoiced Date</th>
+              <th class="p-3 text-right font-semibold text-gray-300">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-800 font-mono text-xs" id="table-body">
-            <tr><td colspan="8" class="p-6 text-center text-gray-500">Loading rate cards and calculating differentials...</td></tr>
+          <tbody class="divide-y divide-gray-800/80" id="customer-table-body">
+            <tr><td colspan="5" class="p-6 text-center text-gray-500">Loading customers...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
   </div>
 
-  <!-- TAB 3: SANDBOX TEST LAB -->
-  <div id="tab-sandbox" class="hidden space-y-6">
+  <!-- ========================================== -->
+  <!-- TAB 3: TEST & PUSH RATES TO BILLING API -->
+  <!-- ========================================== -->
+  <div id="tab-push" class="hidden space-y-6">
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-4">
-        <h2 class="text-base font-semibold text-white">Safe Sandbox Verification</h2>
-        <p class="text-xs text-[var(--muted-foreground)]">
-          Follow our 2-step verification procedure: create a test customer and push sample prices to verify that Billing API accepts our changes cleanly.
-        </p>
 
-        <div class="space-y-3 pt-2">
-          <!-- Step 1: Create Fake Customer -->
+      <!-- Section 1: Fake Customer Sandbox Test -->
+      <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-5 space-y-4">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <span>🧪</span> Sandbox Verification on Fake Customer
+          </h2>
+          <p class="text-xs text-gray-400 mt-1">
+            Safely test the rating engine against Billing API using the test account <code>TEST-JAN-2027</code> before touching any real customers.
+          </p>
+        </div>
+
+        <div class="space-y-3 pt-1">
+          <!-- Step 1 -->
           <div class="p-3.5 bg-gray-900 rounded-lg border border-gray-800 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-xs font-semibold text-white">Step 1: Create Test Customer</span>
               <span class="badge bg-gray-800 text-gray-300">POST /api/create-customer</span>
             </div>
-            <div class="text-[11px] text-gray-400">Creates `TEST-JAN-2027` in Billing API to safely receive test pricing adjustments.</div>
+            <p class="text-[11px] text-gray-400">Registers `TEST-JAN-2027` in Despatch Cloud Billing API.</p>
             <button onclick="runTestCustomerCreate()" id="btn-create-test" class="bg-gray-800 hover:bg-gray-700 text-blue-400 border border-blue-500/30 text-xs px-3 py-1.5 rounded-lg font-medium transition">
               Create Test Customer
             </button>
-            <div id="test-cust-result" class="hidden mt-2 text-xs font-mono p-2 bg-black rounded border border-gray-800 text-emerald-400"></div>
+            <div id="test-cust-result" class="hidden text-xs font-mono p-2 bg-black rounded border border-gray-800 text-emerald-400"></div>
           </div>
 
-          <!-- Step 2: Push Test Rates -->
+          <!-- Step 2 -->
           <div class="p-3.5 bg-gray-900 rounded-lg border border-gray-800 space-y-2">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-white">Step 2: Push January Rates to Test Customer</span>
+              <span class="text-xs font-semibold text-white">Step 2: Push Test Rates</span>
               <span class="badge bg-gray-800 text-gray-300">POST /api/prices/update-customer-prices</span>
             </div>
-            <div class="text-[11px] text-gray-400">Applies 3.9% on DPD (£16.00 -> £16.62) and 2.0% on Yodel (£12.00 -> £12.24).</div>
-            <button onclick="runTestRatePush()" id="btn-push-test" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition">
-              Execute Test Price Update
+            <p class="text-[11px] text-gray-400">Pushes test rate cards to `TEST-JAN-2027` and confirms Billing API accepts the update.</p>
+            <button onclick="runTestRatePush()" id="btn-push-test" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold transition">
+              Push Test Rates to Billing API
             </button>
-            <div id="test-push-result" class="hidden mt-2 text-xs font-mono p-2 bg-black rounded border border-gray-800 text-emerald-400"></div>
+            <div id="test-push-result" class="hidden text-xs font-mono p-2 bg-black rounded border border-gray-800 text-emerald-400"></div>
           </div>
         </div>
-      </div>
 
-      <!-- Real-time Payload & Response Inspector -->
-      <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-3 font-mono text-xs">
-        <div class="flex items-center justify-between font-sans">
-          <span class="font-semibold text-sm text-white">API Payload & Response Inspector</span>
-          <span class="text-[11px] text-gray-400">Live Billing API Stream</span>
-        </div>
-
-        <div class="space-y-1">
-          <div class="text-[10px] text-gray-400 uppercase">Test Request Payload:</div>
-          <pre class="bg-black/80 border border-gray-800 rounded-lg p-3 text-gray-300 overflow-x-auto text-[11px]" id="payload-view">
-{
-  "customer_dc_id": "TEST-JAN-2027",
-  "prices": [
-    {
-      "service_id": 764,        // DPD Next Day
-      "zone_id": 9527,          // Mainland
-      "weight_class_id": 17516, // 0-30kg
-      "price": 1662,            // £16.62 (+3.9%)
-      "sub_price": 416
-    },
-    {
-      "service_id": 2777,       // Yodel
-      "zone_id": 20809,
-      "weight_class_id": 33799,
-      "price": 1224,            // £12.24 (+2.0%)
-      "sub_price": 306
-    }
-  ]
-}</pre>
-        </div>
-
-        <div class="space-y-1 pt-2">
-          <div class="text-[10px] text-gray-400 uppercase">Live Server Response:</div>
-          <pre id="server-response-view" class="bg-black/80 border border-gray-800 rounded-lg p-3 text-emerald-400 overflow-x-auto text-[11px]">
+        <!-- Live Server Response Log -->
+        <div class="space-y-1 pt-1 font-mono text-xs">
+          <div class="text-[10px] text-gray-400 uppercase font-sans">Billing API Live Response:</div>
+          <pre id="server-response-view" class="bg-black/80 border border-gray-800 rounded-lg p-3 text-emerald-400 overflow-x-auto text-[11px] max-h-48">
 // Ready. Click Step 1 or Step 2 to execute live API calls.</pre>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- TAB 4: LIVE EXECUTION & LOGS -->
-  <div id="tab-deploy" class="hidden space-y-6">
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-4">
-        <h2 class="text-base font-semibold text-white">Campaign Execution Control</h2>
-        <p class="text-xs text-[var(--muted-foreground)]">
-          Queue the January 1st price increase for autonomous execution or trigger an immediate batch.
-        </p>
+      <!-- Section 2: Live Rate Push to Billing API -->
+      <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-5 space-y-4">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <span>🚀</span> Live Rate Push to Billing API
+          </h2>
+          <p class="text-xs text-gray-400 mt-1">
+            Directly updates every active paying customer's rates in Despatch Cloud Billing API with the configured percentages.
+          </p>
+        </div>
 
         <div class="p-4 bg-gray-900 rounded-xl border border-gray-800 space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-sm font-semibold text-white">Execution Options</div>
-              <div class="text-xs text-gray-400">Rate-limited to 5 requests per second for API protection.</div>
+          <div class="text-xs space-y-2">
+            <div class="flex justify-between pb-2 border-b border-gray-800 text-gray-300">
+              <span>Standard Increase Recipients:</span>
+              <strong class="text-blue-400 font-mono text-sm" id="live-summary-standard">...</strong>
             </div>
-            <span class="badge bg-blue-500/20 text-blue-400" id="exec-badge">SAFE MODE</span>
+            <div class="flex justify-between pb-2 border-b border-gray-800 text-gray-300">
+              <span>Excluded / 0% Increase (Skipped):</span>
+              <strong class="text-amber-400 font-mono text-sm" id="live-summary-exempt">...</strong>
+            </div>
+            <div class="flex justify-between text-gray-300">
+              <span>API Request Rate:</span>
+              <span class="badge bg-emerald-500/20 text-emerald-400">Safe ~5 calls/sec</span>
+            </div>
           </div>
 
-          <div class="flex flex-wrap items-center gap-3">
-            <button onclick="armCampaign()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2.5 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition">
-              <span>📅</span> Arm for Jan 1, 2027 (Auto-Run)
-            </button>
-            <button onclick="triggerImmediateRun()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2.5 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition">
-              <span>⚡</span> Run Immediate Batch Now
+          <div class="pt-2">
+            <button onclick="triggerImmediateRun()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 shadow-lg transition">
+              <span>⚡</span> Push Rates Directly to Billing API Now
             </button>
           </div>
 
@@ -371,103 +302,105 @@
         <!-- Audit Log Viewer -->
         <div class="space-y-2">
           <div class="flex justify-between items-center">
-            <h3 class="text-sm font-semibold text-white">Recent Audit Logs</h3>
-            <button onclick="loadAuditLogs()" class="text-xs text-blue-400 hover:underline">Refresh Logs</button>
+            <h3 class="text-xs font-semibold text-gray-300">Execution Logs</h3>
+            <button onclick="loadAuditLogs()" class="text-xs text-blue-400 hover:underline">Refresh</button>
           </div>
-          <div class="bg-gray-900 rounded-lg border border-gray-800 p-3 max-h-64 overflow-y-auto font-mono text-xs divide-y divide-gray-800" id="logs-container">
+          <div class="bg-gray-900 rounded-lg border border-gray-800 p-3 max-h-48 overflow-y-auto font-mono text-xs divide-y divide-gray-800" id="logs-container">
             <div class="text-gray-500 py-1">No execution logs yet.</div>
           </div>
         </div>
       </div>
 
-      <!-- Railway Environment Reference -->
-      <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-5 space-y-3">
-        <h2 class="text-base font-semibold text-white">Railway Deployment Guide</h2>
-        <div class="text-xs text-gray-400">When creating your Railway project, add:</div>
-        <ol class="list-decimal list-inside text-xs text-gray-300 space-y-1.5 pt-1">
-          <li><strong>GitHub Repo:</strong> Connect `rossjermymoov/priceincreases`</li>
-          <li><strong>Database:</strong> Add a PostgreSQL service in Railway</li>
-          <li><strong>Environment:</strong> Set `DATABASE_URL` (auto-bound by Railway) and `BILLING_API_TOKEN`</li>
-        </ol>
+    </div>
+  </div>
 
-        <div class="text-xs text-gray-400 pt-2">Environment variables:</div>
-        <pre class="bg-black/90 p-3 rounded-lg border border-gray-800 font-mono text-[11px] text-gray-300 overflow-x-auto space-y-1">
-PORT=3000
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-BILLING_API_BASE=https://production.billingapi.co.uk
-BILLING_API_TOKEN=iiMcRFucDESz3pxU
-SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
+  <!-- ========================================== -->
+  <!-- MODAL: CUSTOMER RATE INSPECTOR -->
+  <!-- ========================================== -->
+  <div id="rate-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[var(--card)] border border-gray-700 rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+        <div>
+          <h3 class="font-bold text-white text-base" id="modal-cust-name">Customer Rates</h3>
+          <p class="text-xs text-gray-400 mt-0.5" id="modal-cust-meta">Rate Card & Increase Breakdown</p>
+        </div>
+        <button onclick="closeRateInspector()" class="text-gray-400 hover:text-white text-xl font-bold p-1">✕</button>
+      </div>
+
+      <!-- Modal Body (Table) -->
+      <div class="overflow-y-auto p-4 flex-1">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-gray-900 text-gray-400 uppercase text-[10px] border-b border-gray-800">
+            <tr>
+              <th class="p-2.5 font-semibold">Carrier & Service</th>
+              <th class="p-2.5 font-semibold">Zone & Weight Band</th>
+              <th class="p-2.5 text-right font-semibold">Current Base</th>
+              <th class="p-2.5 text-right font-semibold">Increase %</th>
+              <th class="p-2.5 text-right font-semibold">New Price</th>
+              <th class="p-2.5 text-right font-semibold">Diff (£)</th>
+              <th class="p-2.5 text-center font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800/80 font-mono" id="modal-table-body">
+            <tr><td colspan="7" class="p-6 text-center text-gray-500">Loading rates...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-5 py-3 border-t border-gray-800 bg-gray-900/50 flex items-center justify-between text-xs">
+        <div id="modal-summary-text" class="text-gray-300"></div>
+        <button onclick="closeRateInspector()" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-1.5 rounded-lg font-medium transition">
+          Close
+        </button>
       </div>
     </div>
   </div>
 
   <script>
     let rulesData = [];
-    let allCustomersList = [];
+    let allCustomers = [];
+    let currentFilterTab = 'all';
+    let customerSearchQuery = '';
+    const selectedDcIds = new Set();
 
     async function init() {
       await loadStatus();
       await loadRules();
       await loadCustomers();
-      await loadRatesPreview();
       await loadAuditLogs();
     }
 
     async function loadStatus() {
       try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        const active = data.counts.activeInvoicedCustomers || data.counts.customers;
-        const excluded = data.counts.excludedInactiveCustomers || 0;
-        const elCust = document.getElementById('stat-customers');
-        if (elCust) elCust.innerText = active;
-        const elAct = document.getElementById('stat-active-invoiced');
-        if (elAct) elAct.innerText = `${active} Active`;
-        const elExcl = document.getElementById('stat-excluded-stale');
-        if (elExcl) elExcl.innerText = `${excluded} Excluded (>12m)`;
-        const elCour = document.getElementById('stat-couriers');
-        if (elCour) elCour.innerText = (data.counts.couriers || 0) + ' Couriers';
-        const elRates = document.getElementById('stat-rates');
-        if (elRates) elRates.innerText = data.counts.rates || 0;
-        const elStatus = document.getElementById('badge-campaign-status');
-        if (elStatus) elStatus.innerText = data.campaign.status;
-        const elDb = document.getElementById('db-badge');
-        if (elDb) elDb.innerText = data.dbDriver.toUpperCase() + ' Mode';
+        const [statusRes, statsRes] = await Promise.all([
+          fetch('/api/status').then(r => r.json()),
+          fetch('/api/customers/stats').then(r => r.json())
+        ]);
 
-        if (document.getElementById('toggle-invoice-gate')) {
-          document.getElementById('toggle-invoice-gate').checked = data.campaign.excludeNoInvoice12m;
-          updateGateStatusText(data.campaign.excludeNoInvoice12m);
-        }
+        const active = statsRes.active || 0;
+        const dormant = statsRes.dormant || 0;
+        const standard = statsRes.standard || 0;
+        const exempt = statsRes.exempt || 0;
+        const custom = statsRes.custom || 0;
+
+        document.getElementById('stat-active').innerText = active;
+        document.getElementById('stat-dormant-desc').innerText = `${dormant} dormant accounts excluded (>12m)`;
+        document.getElementById('stat-standard').innerText = `${standard} Customers`;
+        document.getElementById('stat-exempt').innerText = `${exempt + custom} Customers`;
+        document.getElementById('stat-couriers').innerText = `${statusRes.counts?.couriers || 12} Couriers`;
+
+        document.getElementById('tab-badge-exempt').innerText = `${exempt} Excluded`;
+        document.getElementById('count-all').innerText = active;
+        document.getElementById('count-standard').innerText = standard;
+        document.getElementById('count-exempt').innerText = exempt;
+        document.getElementById('count-custom').innerText = custom;
+
+        document.getElementById('live-summary-standard').innerText = `${standard} Customers`;
+        document.getElementById('live-summary-exempt').innerText = `${exempt + custom} Customers`;
       } catch (e) {
-        console.error(e);
-      }
-    }
-
-    async function toggleInvoiceGate(enabled) {
-      try {
-        await fetch('/api/settings/invoice-gate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enabled })
-        });
-        updateGateStatusText(enabled);
-        await loadStatus();
-        await loadCustomers();
-        await loadRatesPreview();
-      } catch (e) {
-        alert('Failed to update 12-month inactivity gate: ' + e.message);
-      }
-    }
-
-    function updateGateStatusText(enabled) {
-      const el = document.getElementById('gate-status-text');
-      if (!el) return;
-      if (enabled) {
-        el.className = 'text-[11px] text-emerald-400 font-mono';
-        el.innerText = '✓ Active: Customers without an invoice in last 12 months are completely excluded.';
-      } else {
-        el.className = 'text-[11px] text-amber-400 font-mono';
-        el.innerText = '⚠ Gate Disabled: Stale accounts with no invoice in >12 months are included.';
+        console.error('Error loading status:', e);
       }
     }
 
@@ -475,63 +408,28 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       const n = (name || '').toLowerCase();
       const c = (code || '').toLowerCase();
 
-      if (n.includes('dpd') || c === 'dpd') {
-        return { name: 'DPD', logo: '/logos/dpd.svg', bg: 'bg-[#18181b]' };
-      }
-      if (n.includes('yodel') || c.includes('yod')) {
-        return { name: 'Yodel', logo: '/logos/yodel.svg', bg: 'bg-[#18181b]' };
-      }
-      if (n.includes('royal mail') || c === 'rm') {
-        return { name: 'Royal Mail', logo: '/logos/royalmail.svg', bg: 'bg-[#DA202A]' };
-      }
-      if (n.includes('evri') || c.includes('evri')) {
-        return { name: 'EvRi', logo: '/logos/evri.png', bg: 'bg-white' };
-      }
+      if (n.includes('dpd') || c === 'dpd') return { name: 'DPD', logo: '/logos/dpd.svg', bg: 'bg-[#18181b]' };
+      if (n.includes('yodel') || c.includes('yod')) return { name: 'Yodel', logo: '/logos/yodel.svg', bg: 'bg-[#18181b]' };
+      if (n.includes('royal mail') || c === 'rm') return { name: 'Royal Mail', logo: '/logos/royalmail.svg', bg: 'bg-[#DA202A]' };
+      if (n.includes('evri') || c.includes('evri')) return { name: 'EvRi', logo: '/logos/evri.png', bg: 'bg-white' };
       if (n.includes('dhl') || c.includes('dhl')) {
         const displayName = n.includes('c2c') ? 'DHL Ecom C2C' : 'DHL Ecommerce';
         return { name: displayName, logo: '/logos/dhl.svg', bg: 'bg-[#FFCC00]' };
       }
-      if (n.includes('ups') || c.includes('ups')) {
-        return { name: 'UPS', logo: '/logos/ups.svg', bg: 'bg-white' };
-      }
-      if (n.includes('inpost') || c.includes('inpost')) {
-        return { name: 'InPost', logo: '/logos/inpost.svg', bg: 'bg-[#FFCC00]' };
-      }
-      if (n.includes('pro carrier') || c === 'pc') {
-        return { name: 'Pro Carrier', logo: null, bg: 'bg-[#B48B47]' };
-      }
-      if (n.includes('agl') || c === 'agl') {
-        return { name: 'AGL', logo: null, bg: 'bg-blue-700' };
-      }
-      if (n.includes('ppi') || c === 'ppi') {
-        return { name: 'PPI', logo: null, bg: 'bg-emerald-800' };
-      }
-      if (n.includes('api test') || c.includes('api test')) {
-        return { name: 'API TEST', logo: null, bg: 'bg-gray-700' };
-      }
+      if (n.includes('ups') || c.includes('ups')) return { name: 'UPS', logo: '/logos/ups.svg', bg: 'bg-white' };
+      if (n.includes('inpost') || c.includes('inpost')) return { name: 'InPost', logo: '/logos/inpost.svg', bg: 'bg-[#FFCC00]' };
+      if (n.includes('pro carrier') || c === 'pc') return { name: 'Pro Carrier', logo: null, bg: 'bg-[#B48B47]' };
+      if (n.includes('agl') || c === 'agl') return { name: 'AGL', logo: null, bg: 'bg-blue-700' };
+      if (n.includes('ppi') || c === 'ppi') return { name: 'PPI', logo: null, bg: 'bg-emerald-800' };
+      if (n.includes('api test') || c.includes('api test')) return { name: 'API TEST', logo: null, bg: 'bg-gray-700' };
       return { name: name || code, logo: null, bg: 'bg-gray-800' };
-    }
-
-    function populateCarrierFilterDropdown(rules) {
-      const select = document.getElementById('cust-carrier-filter');
-      if (!select) return;
-      const currentVal = select.value || 'all';
-      select.innerHTML = `<option value="all">All Carriers (${rules.length})</option>`;
-      rules.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r.carrier_code || r.carrier_name;
-        opt.textContent = r.carrier_name;
-        if (opt.value === currentVal) opt.selected = true;
-        select.appendChild(opt);
-      });
     }
 
     async function loadRules() {
       try {
         const res = await fetch('/api/rules');
         const data = await res.json();
-        rulesData = data.rules;
-        populateCarrierFilterDropdown(rulesData);
+        rulesData = data.rules || [];
         if (document.getElementById('cutoff-date-input')) {
           document.getElementById('cutoff-date-input').value = data.cutoffDate || '2026-09-01';
         }
@@ -539,38 +437,54 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         const container = document.getElementById('carrier-rules-container');
         if (!container) return;
         container.innerHTML = '';
+
         rulesData.forEach(r => {
           const info = getCarrierInfo(r.carrier_name, r.carrier_code);
           const div = document.createElement('div');
-          div.className = 'p-3.5 bg-gray-900/60 rounded-xl border border-gray-800 hover:border-gray-700 flex flex-col md:flex-row md:items-center justify-between gap-4 transition';
+          div.className = 'p-3.5 bg-gray-900/60 rounded-xl border border-gray-800 hover:border-gray-700 flex items-center justify-between gap-4 transition';
           div.innerHTML = `
-            <div class="flex items-center gap-4">
-              <div class="w-20 h-11 ${info.bg} rounded-lg flex items-center justify-center p-2 shadow-sm border border-gray-700/60 overflow-hidden flex-shrink-0">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-16 h-10 ${info.bg} rounded-lg flex items-center justify-center p-1.5 shadow-sm border border-gray-700/60 overflow-hidden flex-shrink-0">
                 ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-full max-w-full object-contain" />` : `<span class="font-bold text-xs text-white">${info.name}</span>`}
               </div>
-              <div>
-                <div class="font-semibold text-sm text-white">${info.name}</div>
-                <div class="text-[11px] text-gray-500 font-mono">${r.carrier_code || ''}</div>
+              <div class="min-w-0">
+                <div class="font-semibold text-xs text-white truncate">${info.name}</div>
+                <div class="text-[10px] text-gray-500 font-mono">${r.carrier_code || ''}</div>
               </div>
             </div>
-            <div class="flex items-center gap-3">
-              <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent}" class="w-36 accent-blue-500" id="slider-${r.id}" oninput="document.getElementById('val-${r.id}').innerText = this.value + '%'">
-              <div class="w-16 text-right font-mono font-bold text-sm text-blue-400" id="val-${r.id}">${r.increase_percent}%</div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent}" class="w-24 sm:w-28 accent-blue-500" id="slider-${r.id}" oninput="onSliderInput(${r.id}, this.value)">
+              <div class="w-14 text-right">
+                <input type="number" min="0" max="30" step="0.1" value="${r.increase_percent}" id="num-${r.id}" 
+                       class="w-14 bg-gray-800 text-blue-400 font-mono font-bold text-xs text-right border border-gray-700 rounded px-1 py-0.5"
+                       onchange="onNumberInput(${r.id}, this.value)">
+              </div>
+              <span class="text-xs text-gray-400">%</span>
             </div>
           `;
           container.appendChild(div);
         });
       } catch (e) {
-        console.error(e);
+        console.error('Error loading rules:', e);
       }
+    }
+
+    function onSliderInput(id, val) {
+      const numInput = document.getElementById('num-' + id);
+      if (numInput) numInput.value = val;
+    }
+
+    function onNumberInput(id, val) {
+      const slider = document.getElementById('slider-' + id);
+      if (slider) slider.value = val;
     }
 
     async function saveRules() {
       const updatedRules = rulesData.map(r => {
-        const slider = document.getElementById('slider-' + r.id);
+        const numInput = document.getElementById('num-' + r.id);
         return {
           carrier_name: r.carrier_name,
-          increase_percent: slider ? parseFloat(slider.value) : r.increase_percent,
+          increase_percent: numInput ? parseFloat(numInput.value) : r.increase_percent,
           active: 1
         };
       });
@@ -581,181 +495,270 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rules: updatedRules, cutoffDate: cutoff })
       });
-      await loadRatesPreview();
+      alert('✓ Courier base percentage increases saved successfully!');
+      await loadStatus();
     }
 
     async function loadCustomers() {
       try {
         const res = await fetch('/api/customers');
-        const data = await res.json();
-        allCustomersList = data || [];
-        populateCustomerDropdown(allCustomersList);
+        allCustomers = await res.json();
+        renderCustomerTable();
+        await loadStatus();
       } catch (e) {
-        console.error('Failed to load customers:', e);
+        console.error('Error loading customers:', e);
       }
     }
 
-    function populateCustomerDropdown(list, selectedValue = 'all') {
-      const select = document.getElementById('cust-select-filter');
-      if (!select) return;
-
-      const currentVal = selectedValue || select.value || 'all';
-      select.innerHTML = '';
-
-      const allOpt = document.createElement('option');
-      allOpt.value = 'all';
-      allOpt.textContent = `👥 All Active Customers (${allCustomersList.length})`;
-      select.appendChild(allOpt);
-
-      list.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.dc_id;
-        const isExcluded = Number(c.is_inactive_excluded) === 1;
-        opt.textContent = isExcluded
-          ? `🚫 ${c.name || 'Unnamed'} [No invoice >12m]`
-          : `${c.name || 'Unnamed'}`;
-        if (c.dc_id === currentVal) opt.selected = true;
-        select.appendChild(opt);
+    function setCustomerFilterTab(tab) {
+      currentFilterTab = tab;
+      ['all', 'standard', 'exempt', 'custom'].forEach(t => {
+        const btn = document.getElementById('filter-btn-' + t);
+        if (btn) {
+          if (t === tab) {
+            btn.className = 'px-3 py-1.5 rounded-md bg-blue-600 text-white font-medium transition';
+          } else {
+            btn.className = 'px-3 py-1.5 rounded-md text-gray-400 hover:text-white transition';
+          }
+        }
       });
+      renderCustomerTable();
+    }
 
-      if (currentVal === 'all') {
-        allOpt.selected = true;
+    function onCustomerSearch() {
+      customerSearchQuery = (document.getElementById('cust-search-input')?.value || '').trim().toLowerCase();
+      renderCustomerTable();
+    }
+
+    function renderCustomerTable() {
+      const tbody = document.getElementById('customer-table-body');
+      if (!tbody) return;
+
+      let filtered = allCustomers.filter(c => !c.is_inactive_excluded || c.is_inactive_excluded === 0);
+
+      // Filter by tab
+      if (currentFilterTab === 'standard') {
+        filtered = filtered.filter(c => !c.is_exempt && (c.custom_increase_pct === null || c.custom_increase_pct === undefined));
+      } else if (currentFilterTab === 'exempt') {
+        filtered = filtered.filter(c => Number(c.is_exempt) === 1);
+      } else if (currentFilterTab === 'custom') {
+        filtered = filtered.filter(c => !c.is_exempt && c.custom_increase_pct !== null && c.custom_increase_pct !== undefined);
       }
-    }
 
-    function onCustomerSelectChanged() {
-      const select = document.getElementById('cust-select-filter');
-      const selectedDcId = select.value;
-      updateActiveCustomerBanner(selectedDcId);
-      loadRatesPreview();
-    }
+      // Filter by search query
+      if (customerSearchQuery) {
+        filtered = filtered.filter(c => (c.name || '').toLowerCase().includes(customerSearchQuery));
+      }
 
-    function updateActiveCustomerBanner(dcId) {
-      const banner = document.getElementById('cust-active-banner');
-      if (!banner) return;
-
-      if (!dcId || dcId === 'all') {
-        banner.classList.add('hidden');
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-500">No customers match this filter.</td></tr>';
         return;
       }
 
-      const cust = allCustomersList.find(c => c.dc_id === dcId);
-      if (cust) {
-        const nameEl = document.getElementById('banner-cust-name');
-        if (nameEl) nameEl.textContent = cust.name || 'Unnamed';
-        const idEl = document.getElementById('banner-cust-id');
-        if (idEl) idEl.textContent = '';
-        const isExcluded = Number(cust.is_inactive_excluded) === 1;
-        const statusText = isExcluded
-          ? '🚫 Excluded (No invoice in last 12 months)'
-          : (cust.is_exempt ? 'Exempt (0%)' : 'Standard Rate');
-        const invInfo = cust.last_invoice_date ? `Last Invoiced: ${new Date(cust.last_invoice_date).toLocaleDateString()}` : 'Never Invoiced';
-        const metaEl = document.getElementById('banner-cust-meta');
-        if (metaEl) metaEl.textContent = `${invInfo} • Status: ${statusText}`;
-        banner.classList.remove('hidden');
-      } else {
-        banner.classList.add('hidden');
-      }
-    }
+      tbody.innerHTML = '';
+      filtered.forEach(c => {
+        const isExempt = Number(c.is_exempt) === 1;
+        const hasCustom = !isExempt && c.custom_increase_pct !== null && c.custom_increase_pct !== undefined;
+        const isSelected = selectedDcIds.has(c.dc_id);
 
-    function resetCustomerFilter() {
-      const select = document.getElementById('cust-select-filter');
-      if (select) select.value = 'all';
-      const search = document.getElementById('cust-search');
-      if (search) search.value = '';
-      populateCustomerDropdown(allCustomersList, 'all');
-      updateActiveCustomerBanner('all');
-      loadRatesPreview();
-    }
-
-    let searchDebounceTimer = null;
-    function onSearchInputChanged() {
-      const q = document.getElementById('cust-search').value.trim().toLowerCase();
-
-      // Dynamically filter dropdown options
-      if (!q) {
-        populateCustomerDropdown(allCustomersList, document.getElementById('cust-select-filter').value);
-      } else {
-        const matched = allCustomersList.filter(c =>
-          (c.name && c.name.toLowerCase().includes(q)) ||
-          (c.dc_id && c.dc_id.toLowerCase().includes(q))
-        );
-        populateCustomerDropdown(matched, matched.length === 1 ? matched[0].dc_id : 'all');
-        if (matched.length === 1) {
-          document.getElementById('cust-select-filter').value = matched[0].dc_id;
-          updateActiveCustomerBanner(matched[0].dc_id);
+        let statusBadge = `<span class="badge bg-blue-500/20 text-blue-300 border border-blue-500/30">Standard (+Carrier %)</span>`;
+        if (isExempt) {
+          statusBadge = `<span class="badge bg-amber-500/20 text-amber-300 border border-amber-500/40">🚫 Excluded (0% Increase)</span>`;
+        } else if (hasCustom) {
+          statusBadge = `<span class="badge bg-purple-500/20 text-purple-300 border border-purple-500/40">Custom (${c.custom_increase_pct}%)</span>`;
         }
-      }
 
-      // Debounce server call for responsive real-time search
-      clearTimeout(searchDebounceTimer);
-      searchDebounceTimer = setTimeout(() => {
-        loadRatesPreview();
-      }, 250);
+        const invText = c.last_invoice_date ? new Date(c.last_invoice_date).toLocaleDateString() : 'Never';
+
+        const tr = document.createElement('tr');
+        tr.className = isExempt ? 'hover:bg-amber-950/20 bg-amber-950/10 transition-colors' : 'hover:bg-gray-800/40 transition-colors';
+        tr.innerHTML = `
+          <td class="p-3 text-center">
+            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSelectCustomer('${c.dc_id}', this.checked)" class="w-4 h-4 rounded border-gray-700 bg-gray-900 text-blue-600 focus:ring-0">
+          </td>
+          <td class="p-3">
+            <span class="text-white font-semibold text-xs">${c.name || 'Unnamed Customer'}</span>
+          </td>
+          <td class="p-3">
+            ${statusBadge}
+          </td>
+          <td class="p-3 text-gray-400 font-mono text-xs">
+            ${invText}
+          </td>
+          <td class="p-3 text-right">
+            <div class="flex items-center justify-end gap-1.5">
+              ${isExempt 
+                ? `<button onclick="setCustomerExempt('${c.dc_id}', false)" class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-2.5 py-1 rounded transition font-medium">Revert to Standard</button>`
+                : `<button onclick="setCustomerExempt('${c.dc_id}', true)" class="text-xs bg-amber-950/50 hover:bg-amber-900/60 border border-amber-500/50 text-amber-300 px-2.5 py-1 rounded transition font-medium">🚫 Exclude (0%)</button>`
+              }
+              <button onclick="promptCustomerCustomPct('${c.dc_id}', '${(c.name || '').replace(/'/g, "\\'")}', ${c.custom_increase_pct || 'null'})" class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-2 py-1 rounded transition">
+                ${hasCustom ? `Edit ${c.custom_increase_pct}%` : 'Custom %'}
+              </button>
+              <button onclick="openRateInspector('${c.dc_id}', '${(c.name || '').replace(/'/g, "\\'")}')" class="text-xs bg-blue-900/40 hover:bg-blue-800/50 border border-blue-500/40 text-blue-300 px-2 py-1 rounded transition">
+                🔍 Rates
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
     }
 
-    async function loadRatesPreview() {
-      const tbody = document.getElementById('table-body');
-      tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-500">Calculating differential rate cards...</td></tr>';
+    function toggleSelectCustomer(dcId, isChecked) {
+      if (isChecked) selectedDcIds.add(dcId);
+      else selectedDcIds.delete(dcId);
+      updateSelectedCountLabel();
+    }
+
+    function toggleSelectAll(isChecked) {
+      let filtered = allCustomers.filter(c => !c.is_inactive_excluded || c.is_inactive_excluded === 0);
+      if (currentFilterTab === 'standard') filtered = filtered.filter(c => !c.is_exempt && (c.custom_increase_pct === null || c.custom_increase_pct === undefined));
+      else if (currentFilterTab === 'exempt') filtered = filtered.filter(c => Number(c.is_exempt) === 1);
+      else if (currentFilterTab === 'custom') filtered = filtered.filter(c => !c.is_exempt && c.custom_increase_pct !== null && c.custom_increase_pct !== undefined);
+      if (customerSearchQuery) filtered = filtered.filter(c => (c.name || '').toLowerCase().includes(customerSearchQuery));
+
+      if (isChecked) {
+        filtered.forEach(c => selectedDcIds.add(c.dc_id));
+      } else {
+        filtered.forEach(c => selectedDcIds.delete(c.dc_id));
+      }
+      renderCustomerTable();
+      updateSelectedCountLabel();
+    }
+
+    function updateSelectedCountLabel() {
+      const lbl = document.getElementById('selected-count-label');
+      if (lbl) lbl.innerText = `${selectedDcIds.size} selected`;
+    }
+
+    async function setCustomerExempt(dcId, isExempt) {
       try {
-        const customerDcId = document.getElementById('cust-select-filter')?.value || 'all';
-        const carrier = document.getElementById('cust-carrier-filter')?.value || 'all';
-        const search = document.getElementById('cust-search')?.value.trim() || '';
+        await fetch(`/api/customers/${dcId}/exempt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_exempt: isExempt, custom_increase_pct: null })
+        });
+        await loadCustomers();
+      } catch (e) {
+        alert('Failed updating customer: ' + e.message);
+      }
+    }
 
-        const params = new URLSearchParams();
-        if (customerDcId && customerDcId !== 'all') params.set('customer_dc_id', customerDcId);
-        if (carrier && carrier !== 'all') params.set('carrier', carrier);
-        if (search) params.set('search', search);
+    async function promptCustomerCustomPct(dcId, name, currentPct) {
+      const input = prompt(`Enter custom increase percentage for "${name}" (e.g. 2.0):\nLeave blank or cancel to revert to standard carrier rate.`, currentPct !== null ? currentPct : '2.0');
+      if (input === null) return;
+      const pct = input.trim() === '' ? null : parseFloat(input);
+      try {
+        await fetch(`/api/customers/${dcId}/exempt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_exempt: false, custom_increase_pct: isNaN(pct) ? null : pct })
+        });
+        await loadCustomers();
+      } catch (e) {
+        alert('Failed setting custom rate: ' + e.message);
+      }
+    }
 
-        const res = await fetch('/api/rates/preview?' + params.toString());
+    async function bulkExemptSelected(isExempt) {
+      if (selectedDcIds.size === 0) {
+        alert('Please select at least one customer using the checkboxes.');
+        return;
+      }
+      try {
+        await fetch('/api/customers/bulk-exempt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dc_ids: [...selectedDcIds], is_exempt: isExempt, custom_increase_pct: null })
+        });
+        selectedDcIds.clear();
+        updateSelectedCountLabel();
+        await loadCustomers();
+      } catch (e) {
+        alert('Bulk update failed: ' + e.message);
+      }
+    }
+
+    async function bulkCustomPctPrompt() {
+      if (selectedDcIds.size === 0) {
+        alert('Please select at least one customer using the checkboxes.');
+        return;
+      }
+      const input = prompt(`Enter custom increase percentage for the ${selectedDcIds.size} selected customers (e.g. 2.5):`);
+      if (input === null || input.trim() === '') return;
+      const pct = parseFloat(input);
+      if (isNaN(pct)) {
+        alert('Invalid percentage.');
+        return;
+      }
+      try {
+        await fetch('/api/customers/bulk-exempt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dc_ids: [...selectedDcIds], is_exempt: false, custom_increase_pct: pct })
+        });
+        selectedDcIds.clear();
+        updateSelectedCountLabel();
+        await loadCustomers();
+      } catch (e) {
+        alert('Bulk update failed: ' + e.message);
+      }
+    }
+
+    async function openRateInspector(dcId, name) {
+      const modal = document.getElementById('rate-modal');
+      const modalName = document.getElementById('modal-cust-name');
+      const tbody = document.getElementById('modal-table-body');
+      const summaryText = document.getElementById('modal-summary-text');
+
+      modalName.textContent = name;
+      tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-gray-500">Calculating customer rate cards...</td></tr>';
+      modal.classList.remove('hidden');
+
+      try {
+        const res = await fetch(`/api/rates/preview?customer_dc_id=${dcId}`);
         const data = await res.json();
-
-        const statDiff = document.getElementById('stat-diff');
-        if (statDiff && data.summary) statDiff.innerText = '+£' + Number(data.summary.totalDifference || 0).toLocaleString();
-        
-        const statAvg = document.getElementById('stat-avg-pct');
-        if (statAvg && data.summary) statAvg.innerText = '+' + (data.summary.averageIncreasePercent || '0.00') + '%';
-        
-        const statEligible = document.getElementById('stat-eligible');
-        if (statEligible && data.summary) statEligible.innerText = ((data.summary.totalRates || 0) - (data.summary.exemptRates || 0)) + ' Active';
-        
-        const statExempt = document.getElementById('stat-exempt');
-        if (statExempt && data.summary) statExempt.innerText = (data.summary.exemptRates || 0) + ' Exempt (0%)';
-
         tbody.innerHTML = '';
+
         if (!data.rates || data.rates.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">No matching rates found. Try selecting another customer or clearing the search.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-gray-400">No active rates staged for this customer.</td></tr>';
           return;
         }
 
         data.rates.forEach(r => {
           const info = getCarrierInfo(r.courier_code, r.courier_code);
           const tr = document.createElement('tr');
-          tr.className = 'hover:bg-gray-800/40 transition-colors';
+          tr.className = 'hover:bg-gray-800/40 transition';
           tr.innerHTML = `
-            <td class="p-3 font-sans text-white font-medium text-xs">${r.customer_name}</td>
-            <td class="p-3 font-sans whitespace-nowrap">
-              <div class="flex items-center gap-3">
-                <div class="w-16 h-7 bg-black/60 border border-gray-700/80 rounded-md p-1 flex items-center justify-center flex-shrink-0 shadow-sm">
-                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-full max-w-full object-contain" />` : `<span class="font-bold text-[10px] text-white">${info.name}</span>`}
-                </div>
-                <span class="text-gray-100 font-semibold text-xs whitespace-nowrap">${r.service_name}</span>
+            <td class="p-2.5">
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-white text-[11px]">${info.name}</span>
+                <span class="text-gray-300 font-sans text-xs">${r.service_name}</span>
               </div>
             </td>
-            <td class="p-3 font-sans text-gray-400 whitespace-nowrap">${r.zone_name} (${r.weight_band})</td>
-            <td class="p-3 text-right text-gray-300">£${(r.old_price / 100).toFixed(2)}</td>
-            <td class="p-3 text-right ${r.applied_percent > 0 ? 'text-blue-400 font-bold' : 'text-gray-500'}">+${r.applied_percent.toFixed(1)}%</td>
-            <td class="p-3 text-right ${r.diff_pence > 0 ? 'text-emerald-400 font-bold' : 'text-gray-300'}">£${(r.new_price / 100).toFixed(2)}</td>
-            <td class="p-3 text-right ${r.diff_pence > 0 ? 'text-emerald-400' : 'text-gray-500'}">+£${(r.diff_pence / 100).toFixed(2)}</td>
-            <td class="p-3 text-center">
-              ${r.is_exempt ? `<span class="badge bg-amber-500/20 text-amber-300">${r.exemption_reason}</span>` : `<span class="badge bg-emerald-500/20 text-emerald-400">Ready</span>`}
+            <td class="p-2.5 font-sans text-gray-400 text-xs">${r.zone_name} (${r.weight_band})</td>
+            <td class="p-2.5 text-right text-gray-300">£${(r.old_price / 100).toFixed(2)}</td>
+            <td class="p-2.5 text-right ${r.applied_percent > 0 ? 'text-blue-400 font-bold' : 'text-gray-500'}">+${r.applied_percent.toFixed(1)}%</td>
+            <td class="p-2.5 text-right font-bold text-white">£${(r.new_price / 100).toFixed(2)}</td>
+            <td class="p-2.5 text-right ${r.diff_pence > 0 ? 'text-emerald-400' : 'text-gray-500'}">+£${(r.diff_pence / 100).toFixed(2)}</td>
+            <td class="p-2.5 text-center">
+              ${r.is_exempt 
+                ? `<span class="badge bg-amber-500/20 text-amber-300">${r.exemption_reason}</span>` 
+                : `<span class="badge bg-emerald-500/20 text-emerald-400">Ready</span>`
+              }
             </td>
           `;
           tbody.appendChild(tr);
         });
+
+        summaryText.innerHTML = `Total Services: <strong>${data.rates.length}</strong> • Average Increase: <strong>+${data.summary.averageIncreasePercent}%</strong> • Total Diff: <strong>+£${data.summary.totalDifference}</strong>`;
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-400">${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-400">${e.message}</td></tr>`;
       }
+    }
+
+    function closeRateInspector() {
+      document.getElementById('rate-modal')?.classList.add('hidden');
     }
 
     async function triggerSync() {
@@ -769,7 +772,7 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       } catch (e) {
         alert('Sync error: ' + e.message);
       } finally {
-        btn.innerText = '🔄 Sync From Billing API';
+        btn.innerText = '🔄 Refresh from Billing API';
       }
     }
 
@@ -786,9 +789,8 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         });
         const data = await res.json();
         btn.innerText = '✓ Created';
-        btn.classList.add('text-emerald-400', 'border-emerald-500');
         resEl.classList.remove('hidden');
-        resEl.innerText = '✓ Customer TEST-JAN-2027 created successfully in Billing API.';
+        resEl.innerText = '✓ Customer TEST-JAN-2027 registered in Billing API.';
         view.innerText = JSON.stringify(data, null, 2);
       } catch (e) {
         btn.innerText = 'Failed';
@@ -803,7 +805,7 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       const view = document.getElementById('server-response-view');
       btn.innerText = 'Posting to Billing API...';
       try {
-        const res = await fetch('/api/sandbox/test-price-update', {
+        const res = await fetch('/api/sandbox/push-rates', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ customer_dc_id: 'TEST-JAN-2027' })
@@ -811,7 +813,7 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         const data = await res.json();
         btn.innerText = '✓ Rates Updated';
         resEl.classList.remove('hidden');
-        resEl.innerText = '✓ Success: 2 rate lines pushed and verified in Billing API.';
+        resEl.innerText = '✓ Success: Rates accepted and verified in Billing API.';
         view.innerText = JSON.stringify(data, null, 2);
       } catch (e) {
         btn.innerText = 'Failed';
@@ -820,40 +822,31 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       }
     }
 
-    async function armCampaign() {
-      const date = document.getElementById('sched-date-input').value;
-      const res = await fetch('/api/campaign/arm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduledDate: date ? new Date(date).toISOString() : '2027-01-01T00:01:00Z' })
-      });
-      const data = await res.json();
-      alert('Campaign Armed! Worker will execute automatically at ' + data.scheduledDate);
-      await loadStatus();
-    }
-
     async function triggerImmediateRun() {
-      if (!confirm('Are you sure you want to execute price updates immediately across all eligible customers?')) return;
-      await fetch('/api/campaign/run-now', { method: 'POST' });
+      if (!confirm('Are you sure you want to push rate increases directly to Despatch Cloud Billing API now?')) return;
       document.getElementById('progress-box').classList.remove('hidden');
-      pollProgress();
+      try {
+        await fetch('/api/campaign/execute-now', { method: 'POST' });
+        pollProgress();
+      } catch (e) {
+        alert('Failed: ' + e.message);
+      }
     }
 
     function pollProgress() {
-      const timer = setInterval(async () => {
+      const interval = setInterval(async () => {
         const res = await fetch('/api/campaign/progress');
         const data = await res.json();
-        if (data.total > 0) {
-          const pct = Math.round((data.current / data.total) * 100);
-          document.getElementById('progress-pct').innerText = pct + '%';
-          document.getElementById('progress-bar').style.width = pct + '%';
-          document.getElementById('progress-text').innerText = `${data.lastMessage} (${data.current}/${data.total})`;
-        }
+        const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
+        document.getElementById('progress-pct').innerText = pct + '%';
+        document.getElementById('progress-bar').style.width = pct + '%';
+        document.getElementById('progress-text').innerText = `${data.lastMessage} (${data.current}/${data.total})`;
         if (data.status === 'COMPLETED' || data.status === 'FAILED') {
-          clearInterval(timer);
+          clearInterval(interval);
           await loadAuditLogs();
+          await loadStatus();
         }
-      }, 1000);
+      }, 800);
     }
 
     async function loadAuditLogs() {
@@ -861,18 +854,19 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         const res = await fetch('/api/audit-logs');
         const logs = await res.json();
         const container = document.getElementById('logs-container');
-        if (logs.length === 0) {
+        if (!container) return;
+        if (!logs || logs.length === 0) {
           container.innerHTML = '<div class="text-gray-500 py-1">No execution logs yet.</div>';
           return;
         }
         container.innerHTML = logs.map(l => `
-          <div class="py-2 flex justify-between items-start gap-4">
+          <div class="py-1 flex items-center justify-between text-[11px]">
             <div>
-              <span class="badge ${l.status === 'SUCCESS' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-300'}">${l.event_type}</span>
-              <span class="text-gray-300 font-bold ml-1">${l.customer_dc_id}</span>
-              <span class="text-gray-400 ml-2">${l.details}</span>
+              <span class="text-gray-500 font-mono">[${new Date(l.created_at).toLocaleTimeString()}]</span>
+              <span class="text-gray-200 ml-1 font-medium">${l.event_type}</span>
+              <span class="text-gray-400 ml-1">(${l.details})</span>
             </div>
-            <span class="text-gray-500 text-[10px] whitespace-nowrap">${new Date(l.created_at).toLocaleTimeString()}</span>
+            <span class="badge ${l.status === 'SUCCESS' ? 'bg-emerald-500/20 text-emerald-300' : (l.status === 'SKIPPED' ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300')}">${l.status}</span>
           </div>
         `).join('');
       } catch (e) {
@@ -881,29 +875,25 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
     }
 
     function setTab(tabName) {
-      ['rules', 'matrix', 'sandbox', 'deploy'].forEach(t => {
-        document.getElementById('tab-' + t).classList.add('hidden');
-        document.getElementById('tab-btn-' + t).classList.remove('border-blue-500', 'text-blue-400');
-        document.getElementById('tab-btn-' + t).classList.add('border-transparent', 'text-gray-400');
+      ['rules', 'customers', 'push'].forEach(t => {
+        const content = document.getElementById('tab-' + t);
+        const btn = document.getElementById('tab-btn-' + t);
+        if (content) content.classList.add('hidden');
+        if (btn) {
+          btn.classList.remove('border-blue-500', 'text-blue-400');
+          btn.classList.add('border-transparent', 'text-gray-400');
+        }
       });
-      document.getElementById('tab-' + tabName).classList.remove('hidden');
-      document.getElementById('tab-btn-' + tabName).classList.remove('border-transparent', 'text-gray-400');
-      document.getElementById('tab-btn-' + tabName).classList.add('border-blue-500', 'text-blue-400');
+      const activeContent = document.getElementById('tab-' + tabName);
+      const activeBtn = document.getElementById('tab-btn-' + tabName);
+      if (activeContent) activeContent.classList.remove('hidden');
+      if (activeBtn) {
+        activeBtn.classList.remove('border-transparent', 'text-gray-400');
+        activeBtn.classList.add('border-blue-500', 'text-blue-400');
+      }
     }
 
-    function filterTable() {
-      const q = document.getElementById('cust-search').value.toLowerCase();
-      const carrier = document.getElementById('cust-carrier-filter').value;
-      const rows = document.querySelectorAll('#table-body tr');
-      rows.forEach(r => {
-        const text = r.innerText.toLowerCase();
-        const matchQ = text.includes(q);
-        const matchCarrier = carrier === 'all' || text.includes(carrier.toLowerCase());
-        r.style.display = (matchQ && matchCarrier) ? '' : 'none';
-      });
-    }
-
-    window.onload = init;
+    window.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
 </html>

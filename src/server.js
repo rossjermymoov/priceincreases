@@ -150,6 +150,47 @@ app.post('/api/customers/:dcId/exempt', async (req, res) => {
   }
 });
 
+// Bulk Exemption or Custom Percentage
+app.post('/api/customers/bulk-exempt', async (req, res) => {
+  try {
+    const { dc_ids, is_exempt, custom_increase_pct } = req.body;
+    if (Array.isArray(dc_ids)) {
+      for (const dc_id of dc_ids) {
+        await db.query(
+          'UPDATE customers SET is_exempt = ?, custom_increase_pct = ? WHERE dc_id = ?',
+          [is_exempt ? 1 : 0, custom_increase_pct !== undefined ? custom_increase_pct : null, dc_id]
+        );
+      }
+    }
+    res.json({ success: true, count: dc_ids?.length || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Customer Exclusion Statistics
+app.get('/api/customers/stats', async (req, res) => {
+  try {
+    const list = await db.query('SELECT * FROM customers');
+    const active = list.filter(c => !c.is_inactive_excluded || c.is_inactive_excluded === 0);
+    const dormant = list.filter(c => c.is_inactive_excluded === 1);
+    const exempt = active.filter(c => Number(c.is_exempt) === 1);
+    const custom = active.filter(c => !c.is_exempt && c.custom_increase_pct !== null && c.custom_increase_pct !== undefined);
+    const standard = active.filter(c => !c.is_exempt && (c.custom_increase_pct === null || c.custom_increase_pct === undefined));
+
+    res.json({
+      total: list.length,
+      active: active.length,
+      dormant: dormant.length,
+      standard: standard.length,
+      exempt: exempt.length,
+      custom: custom.length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Couriers List
 app.get('/api/couriers', async (req, res) => {
   try {
