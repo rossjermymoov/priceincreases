@@ -53,7 +53,10 @@ class PricingScheduler {
     const rules = await db.query('SELECT * FROM pricing_rules WHERE active = 1');
     const ruleMap = new Map();
     for (const r of rules) {
-      ruleMap.set(r.carrier_code, Number(r.increase_percent));
+      ruleMap.set(r.carrier_code, {
+        increase_percent: Number(r.increase_percent || 0),
+        fixed_markup_pence: Number(r.fixed_markup_pence || 0)
+      });
     }
 
     // 2. Fetch cutoff date
@@ -97,43 +100,53 @@ class PricingScheduler {
     const calculatedList = [];
 
     for (const c of customers) {
-      const isInactiveExcluded = Number(c.is_inactive_excluded) === 1;
+      const isTestCustomer = (c.dc_id || '').toLowerCase().includes('test') || (c.name || '').toLowerCase().includes('test');
+      const isInactiveExcluded = !isTestCustomer && Number(c.is_inactive_excluded) === 1;
       if (exclude12m && isInactiveExcluded && !customerDcId) {
         continue;
       }
 
       const joinDate = c.created_at ? new Date(c.created_at).getTime() : 0;
-      const isJoinedAfterCutoff = joinDate > cutoffTimestamp;
+      const isJoinedAfterCutoff = !isTestCustomer && (joinDate > cutoffTimestamp);
       const isManuallyExempt = Number(c.is_exempt) === 1;
 
       const custRates = ratesByCustomer.get(c.dc_id) || [];
 
       for (const rate of custRates) {
         let appliedPct = 0;
+        let appliedFixedPence = 0;
         let exemptionReason = null;
 
         if (isInactiveExcluded) {
           appliedPct = 0;
+          appliedFixedPence = 0;
           exemptionReason = 'Excluded: No invoice in last 12 months';
         } else if (isManuallyExempt) {
           appliedPct = 0;
+          appliedFixedPence = 0;
           exemptionReason = 'Manually Exempt';
         } else if (isJoinedAfterCutoff) {
           appliedPct = 0;
+          appliedFixedPence = 0;
           exemptionReason = `Joined after ${cutoffDateStr} (Introductory)`;
         } else if (c.custom_increase_pct !== null && c.custom_increase_pct !== undefined) {
           appliedPct = Number(c.custom_increase_pct);
+          appliedFixedPence = 0;
           exemptionReason = 'Customer Custom Rate';
         } else {
-          appliedPct = ruleMap.get(rate.courier_code) || 0;
+          const rule = ruleMap.get(rate.courier_code);
+          if (rule) {
+            appliedPct = rule.increase_percent;
+            appliedFixedPence = rule.fixed_markup_pence;
+          }
         }
 
         const oldPricePence = Number(rate.current_price_pence);
-        const newPricePence = Math.round(oldPricePence * (1 + appliedPct / 100));
+        const newPricePence = Math.round(oldPricePence * (1 + appliedPct / 100)) + Math.round(appliedFixedPence);
         const diffPence = newPricePence - oldPricePence;
 
         const oldSubPrice = Number(rate.current_sub_price_pence || 0);
-        const newSubPrice = Math.round(oldSubPrice * (1 + appliedPct / 100));
+        const newSubPrice = Math.round(oldSubPrice * (1 + appliedPct / 100)) + (appliedFixedPence > 0 ? Math.round(appliedFixedPence) : 0);
 
         calculatedList.push({
           customer_dc_id: c.dc_id,
@@ -151,8 +164,9 @@ class PricingScheduler {
           old_sub_price: oldSubPrice,
           new_sub_price: newSubPrice,
           applied_percent: appliedPct,
+          applied_fixed_pence: appliedFixedPence,
           exemption_reason: exemptionReason,
-          is_exempt: appliedPct === 0
+          is_exempt: appliedPct === 0 && appliedFixedPence === 0
         });
       }
     }

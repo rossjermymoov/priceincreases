@@ -168,6 +168,36 @@ app.post('/api/customers/bulk-exempt', async (req, res) => {
   }
 });
 
+// Add or Update Customer Rates
+app.post('/api/customers/:dcId/rates', async (req, res) => {
+  try {
+    const { dcId } = req.params;
+    const { rates } = req.body;
+    if (Array.isArray(rates)) {
+      for (const r of rates) {
+        const sql = db.dbDriver === 'postgres'
+          ? 'INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (customer_dc_id, service_id, zone_id, weight_class_id) DO UPDATE SET current_price_pence = EXCLUDED.current_price_pence, current_sub_price_pence = EXCLUDED.current_sub_price_pence'
+          : 'INSERT OR REPLACE INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        await db.query(sql, [
+          dcId,
+          r.courier_code || 'DPD',
+          Number(r.service_id),
+          r.service_name || 'Standard Service',
+          Number(r.zone_id || 9527),
+          r.zone_name || 'Mainland',
+          Number(r.weight_class_id || 17516),
+          r.weight_band || 'Standard',
+          Math.round(Number(r.price)),
+          Math.round(Number(r.sub_price || 0))
+        ]);
+      }
+    }
+    res.json({ success: true, ratesCount: rates?.length || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Customer Exclusion Statistics
 app.get('/api/customers/stats', async (req, res) => {
   try {
@@ -252,10 +282,15 @@ app.post('/api/rules', async (req, res) => {
     const { rules, cutoffDate } = req.body;
     if (Array.isArray(rules)) {
       for (const r of rules) {
-        await db.query(
-          'UPDATE pricing_rules SET increase_percent = ?, active = ? WHERE carrier_name = ?',
-          [Number(r.increase_percent), r.active ? 1 : 0, r.carrier_name]
-        );
+        const sql = db.dbDriver === 'postgres'
+          ? 'UPDATE pricing_rules SET increase_percent = $1, fixed_markup_pence = $2, active = $3 WHERE carrier_name = $4'
+          : 'UPDATE pricing_rules SET increase_percent = ?, fixed_markup_pence = ?, active = ? WHERE carrier_name = ?';
+        await db.query(sql, [
+          Number(r.increase_percent || 0),
+          Math.round(Number(r.fixed_markup_pence || 0)),
+          r.active ? 1 : 0,
+          r.carrier_name
+        ]);
       }
     }
     if (cutoffDate) {
@@ -332,35 +367,91 @@ app.get('/api/rates/preview', async (req, res) => {
 // 6. Sandbox Testing Lab
 app.post('/api/sandbox/create-customer', async (req, res) => {
   try {
-    const result = await billingApi.createCustomer(req.body);
+    const rawName = (req.body.name || 'test Jan').trim();
+    const rawDcId = (req.body.dc_id || rawName).trim();
+
+    let result;
+    let alreadyExists = false;
+
+    try {
+      result = await billingApi.createCustomer({
+        ...req.body,
+        name: rawName,
+        dc_id: rawDcId
+      });
+    } catch (err) {
+      const errMsg = (err.data && typeof err.data === 'object' && err.data.error) || err.message || '';
+      if (errMsg.toLowerCase().includes('already been registered')) {
+        alreadyExists = true;
+        result = { success: true, message: `Customer "${rawName}" is already registered in Billing API and ready to test!`, alreadyExists: true };
+      } else {
+        throw err;
+      }
+    }
+
+    // Upsert into local database so customer is active and available immediately
+    const upsertCustSql = db.dbDriver === 'postgres'
+      ? 'INSERT INTO customers (dc_id, name, email, created_at, is_inactive_excluded, is_exempt) VALUES ($1, $2, $3, $4, 0, 0) ON CONFLICT (dc_id) DO UPDATE SET name = EXCLUDED.name, is_inactive_excluded = 0'
+      : 'INSERT OR REPLACE INTO customers (dc_id, name, email, created_at, is_inactive_excluded, is_exempt) VALUES (?, ?, ?, ?, 0, 0)';
+    await db.query(upsertCustSql, [rawDcId, rawName, req.body.email || 'testing@despatchcloud.com', new Date().toISOString()]);
+
+    // Ensure baseline sample rates are seeded for this customer across couriers
+    await ensureRatesForCustomers([{ dc_id: rawDcId, name: rawName }]);
+
     await db.query(
       'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
-      ['SANDBOX_CREATE_CUSTOMER', req.body.dc_id || 'TEST-JAN-2027', JSON.stringify(result), 'SUCCESS', new Date().toISOString()]
+      ['SANDBOX_CREATE_CUSTOMER', rawDcId, JSON.stringify(result), 'SUCCESS', new Date().toISOString()]
     );
-    res.json({ success: true, result });
+
+    res.json({ success: true, customer_dc_id: rawDcId, name: rawName, alreadyExists, result });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message, data: err.data });
   }
 });
 
-app.post('/api/sandbox/test-price-update', async (req, res) => {
+async function handleSandboxPushRates(req, res) {
   try {
-    const testDcId = req.body.customer_dc_id || 'TEST-JAN-2027';
-    const testPrices = req.body.prices || [
-      { service_id: 764, zone_id: 9527, weight_class_id: 17516, price: 1662, sub_price: 416 },
-      { service_id: 2777, zone_id: 20809, weight_class_id: 33799, price: 1224, sub_price: 306 }
-    ];
+    const testDcId = (req.body.customer_dc_id || 'test Jan').trim();
+    let pricesToPush = req.body.prices;
 
-    const result = await billingApi.updateCustomerPrices(testDcId, testPrices);
+    if (!pricesToPush || !Array.isArray(pricesToPush) || pricesToPush.length === 0) {
+      // Calculate rates for this customer from our rules engine
+      let calculated = await scheduler.calculateCustomerRates(testDcId);
+      if (calculated.length === 0) {
+        // Ensure customer exists and has sample rates seeded if none exist
+        const custs = await db.query('SELECT * FROM customers WHERE dc_id = ?', [testDcId]);
+        if (custs.length === 0) {
+          const insertSql = db.dbDriver === 'postgres'
+            ? 'INSERT INTO customers (dc_id, name, created_at, is_inactive_excluded, is_exempt) VALUES ($1, $2, $3, 0, 0) ON CONFLICT (dc_id) DO NOTHING'
+            : 'INSERT OR IGNORE INTO customers (dc_id, name, created_at, is_inactive_excluded, is_exempt) VALUES (?, ?, ?, 0, 0)';
+          await db.query(insertSql, [testDcId, testDcId, new Date().toISOString()]);
+        }
+        await ensureRatesForCustomers([{ dc_id: testDcId, name: testDcId }]);
+        calculated = await scheduler.calculateCustomerRates(testDcId);
+      }
+
+      pricesToPush = calculated.map(r => ({
+        service_id: Number(r.service_id),
+        zone_id: Number(r.zone_id),
+        weight_class_id: Number(r.weight_class_id),
+        price: Number(r.new_price),
+        sub_price: Number(r.new_sub_price)
+      }));
+    }
+
+    const result = await billingApi.updateCustomerPrices(testDcId, pricesToPush);
     await db.query(
       'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
-      ['SANDBOX_UPDATE_PRICES', testDcId, JSON.stringify(result), 'SUCCESS', new Date().toISOString()]
+      ['SANDBOX_UPDATE_PRICES', testDcId, JSON.stringify({ count: pricesToPush.length, result }), 'SUCCESS', new Date().toISOString()]
     );
-    res.json({ success: true, result });
+    res.json({ success: true, customer_dc_id: testDcId, ratesUpdated: pricesToPush.length, pricesSent: pricesToPush, result });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message, data: err.data });
   }
-});
+}
+
+app.post('/api/sandbox/push-rates', handleSandboxPushRates);
+app.post('/api/sandbox/test-price-update', handleSandboxPushRates);
 
 // 7. Execution & Scheduling
 app.post('/api/campaign/arm', async (req, res) => {
@@ -503,19 +594,18 @@ async function auditCustomerInvoices(customers) {
 
 async function ensureRatesForCustomers(customers) {
   const sampleServices = [
-    { service_id: 764, name: 'DPD Next Day', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 545, sub: 100 },
-    { service_id: 1644, name: 'Yodel C2C', courier: 'YODC2C', zone_id: 20809, zone_name: 'Mainland', weight_id: 33799, weight_name: '0-15kg', price: 395, sub: 80 },
-    { service_id: 769, name: 'DPD Classic', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 620, sub: 120 },
-    { service_id: 2315, name: 'Royal Mail 24 Large Letter', courier: 'RM', zone_id: 9527, zone_name: 'UK National', weight_id: 17516, weight_name: '0-2kg', price: 290, sub: 50 },
-    { service_id: 1381, name: 'Evri 24 Non POD Parcel', courier: 'EvRi', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-15kg', price: 310, sub: 60 },
-    { service_id: 1362, name: 'DHL Ecommerce Parcel', courier: 'DHL', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-25kg', price: 480, sub: 90 },
-    { service_id: 1650, name: 'DHL Bagit 1Kg C2C', courier: 'DHLC2C', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-1kg', price: 340, sub: 70 },
-    { service_id: 1537, name: 'UPS Standard UK', courier: 'UPS', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 650, sub: 130 },
-    { service_id: 3542, name: 'InPost 2Door Small', courier: 'INPOST', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: 'Small Locker', price: 280, sub: 45 },
-    { service_id: 1264, name: 'Pro Carrier Tracked 48', courier: 'PC', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-2kg', price: 295, sub: 50 },
-    { service_id: 2753, name: 'AGL Yodel Xpect 24', courier: 'AGL', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-10kg', price: 360, sub: 65 },
-    { service_id: 1353, name: 'PPI Label', courier: 'PPI', zone_id: 9527, zone_name: 'UK National', weight_id: 17516, weight_name: 'Standard', price: 220, sub: 40 },
-    { service_id: 2776, name: 'API Test Service 2', courier: 'API TEST', zone_id: 9527, zone_name: 'Test Zone', weight_id: 17516, weight_name: '0-5kg', price: 250, sub: 50 }
+    { service_id: 764, name: 'DPD Next Day', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: 'Parcel', price: 545, sub: 100 },
+    { service_id: 1644, name: 'Yodel C2C', courier: 'YODC2C', zone_id: 14016, zone_name: 'Mainland', weight_id: 25269, weight_name: '0 - 1 KG', price: 395, sub: 80 },
+    { service_id: 2313, name: 'Royal Mail 1st Class Signed For', courier: 'RM', zone_id: 17591, zone_name: 'UK', weight_id: 30189, weight_name: 'Parcel', price: 320, sub: 50 },
+    { service_id: 886, name: 'Evri International DDP', courier: 'EvRi', zone_id: 10355, zone_name: 'Austria', weight_id: 18320, weight_name: '0-250g', price: 310, sub: 60 },
+    { service_id: 1362, name: 'DHL Ecommerce Parcel', courier: 'DHL', zone_id: 12799, zone_name: 'Zone A', weight_id: 23135, weight_name: 'Parcel', price: 480, sub: 90 },
+    { service_id: 1650, name: 'DHL Bagit 1Kg C2C', courier: 'DHLC2C', zone_id: 14031, zone_name: 'Mainland', weight_id: 25289, weight_name: 'Small Bagit', price: 340, sub: 70 },
+    { service_id: 1537, name: 'UPS Standard UK', courier: 'UPS', zone_id: 13239, zone_name: 'Mainland', weight_id: 23710, weight_name: '2 - 5 KG', price: 650, sub: 130 },
+    { service_id: 3542, name: 'InPost 2Door Small', courier: 'INPOST', zone_id: 32573, zone_name: 'Mainland', weight_id: 39677, weight_name: 'Inpost Mini', price: 280, sub: 45 },
+    { service_id: 1264, name: 'Royal Mail Tracked 48', courier: 'PC', zone_id: 12502, zone_name: 'United Kingdom', weight_id: 22707, weight_name: 'Up to 2KG', price: 295, sub: 50 },
+    { service_id: 2753, name: 'Yodel Xpect Mini 24', courier: 'AGL', zone_id: 20703, zone_name: 'Mainland', weight_id: 33687, weight_name: 'Packet', price: 360, sub: 65 },
+    { service_id: 1353, name: 'PPI Label', courier: 'PPI', zone_id: 12771, zone_name: 'UK', weight_id: 23094, weight_name: 'Parcel', price: 220, sub: 40 },
+    { service_id: 2776, name: 'Testy Service 2', courier: 'API TEST', zone_id: 20811, zone_name: 'Greece', weight_id: 33789, weight_name: '0 kg - 0.5 kg', price: 250, sub: 50 }
   ];
 
   for (const c of customers) {
@@ -534,10 +624,13 @@ async function start() {
   await db.initDb();
   scheduler.init();
 
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[RateShift] Server running on http://0.0.0.0:${PORT}`);
+  });
+
   try {
     const custs = await db.query('SELECT * FROM customers');
     if (custs.length > 0) {
-      // Check if invoice audit is needed (or if HOF accounts are not yet excluded)
       const needsAudit = custs.some(c => 
         c.is_inactive_excluded === undefined || 
         c.is_inactive_excluded === null || 
@@ -552,16 +645,15 @@ async function start() {
       }
 
       const activeCusts = custs.filter(c => c.is_inactive_excluded !== 1);
-      await ensureRatesForCustomers(activeCusts.length > 0 ? activeCusts : custs);
-      console.log(`[RateShift] Rate cards verified/seeded across ${custs.length} customers.`);
+      ensureRatesForCustomers(activeCusts.length > 0 ? activeCusts : custs).then(() => {
+        console.log(`[RateShift] Rate cards verified/seeded across ${custs.length} customers.`);
+      }).catch(err => {
+        console.warn('[RateShift] ensureRatesForCustomers error:', err.message);
+      });
     }
   } catch (e) {
     console.warn('[RateShift] Initial rate verification warning:', e.message);
   }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[RateShift] Server running on http://0.0.0.0:${PORT}`);
-  });
 }
 
 start().catch(err => {

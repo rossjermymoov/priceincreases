@@ -68,11 +68,13 @@ class BillingApiClient {
     return this.request(`/api/services/${serviceId}/weight-classes.json`);
   }
 
-  // 6. Create Fake Customer for Sandbox Testing
+  // 6. Create Customer for Testing
   async createCustomer(customerData = {}) {
+    const name = customerData.name || 'test Jan';
+    const dcId = customerData.dc_id || name;
     const payload = {
-      name: customerData.name || 'TEST Customer Jan 2027',
-      dc_id: customerData.dc_id || 'TEST-JAN-2027',
+      name: name,
+      dc_id: dcId,
       billing_period: customerData.billing_period || 'weekly',
       vat_enabled: customerData.vat_enabled !== undefined ? customerData.vat_enabled : true,
       address_line_1: customerData.address_line_1 || 'Test Unit 100',

@@ -128,11 +128,18 @@ async function query(sql, params = []) {
 
   // Inserts / Updates
   if (lower.includes('insert') && lower.includes('customers')) {
-    const [id, dc_id, name, email, created_at, billing_period] = params;
+    let id, dc_id, name, email, created_at, billing_period;
+    if (params.length >= 6) {
+      [id, dc_id, name, email, created_at, billing_period] = params;
+    } else {
+      [dc_id, name, email, created_at] = params;
+      id = Date.now();
+      billing_period = 'weekly';
+    }
     const existingIdx = store.data.customers.findIndex(c => c.dc_id === dc_id);
-    const rec = { id, dc_id, name, email, created_at, billing_period, is_exempt: 0, custom_increase_pct: null };
+    const rec = { id: id || Date.now(), dc_id, name, email, created_at, billing_period, is_exempt: 0, is_inactive_excluded: 0, custom_increase_pct: null };
     if (existingIdx >= 0) {
-      store.data.customers[existingIdx] = { ...store.data.customers[existingIdx], ...rec };
+      store.data.customers[existingIdx] = { ...store.data.customers[existingIdx], ...rec, is_inactive_excluded: 0 };
     } else {
       store.data.customers.push(rec);
     }
@@ -204,12 +211,23 @@ async function query(sql, params = []) {
   }
 
   if (lower.startsWith('update pricing_rules')) {
-    const [increase_percent, active, carrier_name] = params;
-    const r = store.data.pricing_rules.find(x => x.carrier_name === carrier_name);
-    if (r) {
-      r.increase_percent = increase_percent;
-      r.active = active;
-      store.save();
+    if (params.length === 4) {
+      const [increase_percent, fixed_markup_pence, active, carrier_name] = params;
+      const r = store.data.pricing_rules.find(x => x.carrier_name === carrier_name);
+      if (r) {
+        r.increase_percent = Number(increase_percent || 0);
+        r.fixed_markup_pence = Number(fixed_markup_pence || 0);
+        r.active = active;
+        store.save();
+      }
+    } else {
+      const [increase_percent, active, carrier_name] = params;
+      const r = store.data.pricing_rules.find(x => x.carrier_name === carrier_name);
+      if (r) {
+        r.increase_percent = Number(increase_percent || 0);
+        r.active = active;
+        store.save();
+      }
     }
     return [];
   }
@@ -302,6 +320,7 @@ async function initDb() {
         carrier_name TEXT UNIQUE,
         carrier_code TEXT,
         increase_percent REAL DEFAULT 0.0,
+        fixed_markup_pence REAL DEFAULT 0.0,
         active INTEGER DEFAULT 1
       );
       CREATE TABLE IF NOT EXISTS campaign_settings (
@@ -316,6 +335,7 @@ async function initDb() {
         status TEXT,
         created_at TEXT
       );
+      ALTER TABLE pricing_rules ADD COLUMN IF NOT EXISTS fixed_markup_pence REAL DEFAULT 0.0;
     `);
   }
 

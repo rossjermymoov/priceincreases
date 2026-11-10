@@ -103,20 +103,55 @@
   <!-- ========================================== -->
   <!-- TAB 1: CARRIER BASE % INCREASES -->
   <!-- ========================================== -->
+  <!-- TAB 1: COURIER BASE INCREASES & CUTOFF     -->
+  <!-- ========================================== -->
   <div id="tab-rules" class="space-y-6">
     <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-5 space-y-4">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-800/80 pb-4">
         <div>
-          <h2 class="text-base font-bold text-white">Across-The-Board Courier Increases</h2>
-          <p class="text-xs text-gray-400 mt-0.5">Set the January percentage increase to apply per courier for all standard customers.</p>
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <span>🚚</span> Courier Price Increase Rules
+          </h2>
+          <p class="text-xs text-gray-400 mt-0.5">Configure individual percentage marks (%) and fixed price additions (+£) per courier, or apply a fixed mark across all couriers.</p>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3">
           <div class="flex items-center gap-2 bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-800 text-xs">
-            <span class="text-gray-400">Introductory Exemption Cutoff:</span>
+            <span class="text-gray-400">Introductory Cutoff:</span>
             <input type="date" id="cutoff-date-input" value="2026-09-01" class="bg-gray-800 text-white border border-gray-700 rounded px-2 py-0.5 text-xs font-mono">
           </div>
-          <button onclick="saveRules()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs px-4 py-2 rounded-lg transition shadow-md">
-            Save Base Rates
+          <button onclick="saveRules()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5">
+            <span>💾</span> Save All Rates
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Global Adjustment Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-3 p-3 bg-gray-900/80 rounded-xl border border-gray-800 text-xs">
+        <div class="flex flex-wrap items-center gap-3">
+          <!-- Fixed % Mark -->
+          <div class="flex items-center gap-1.5 bg-gray-950 px-2.5 py-1.5 rounded-lg border border-gray-800">
+            <span class="text-gray-300 font-semibold">⚡ Fixed % Mark:</span>
+            <input type="number" id="quick-fixed-pct" min="0" max="30" step="0.1" value="3.5" class="w-14 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-blue-400 font-mono font-bold text-xs text-right">
+            <span class="text-gray-400 font-mono">%</span>
+            <button onclick="applyFixedPercentageToAll()" class="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 px-2.5 py-0.5 rounded text-xs font-semibold transition ml-1">
+              Apply to All
+            </button>
+          </div>
+
+          <!-- Fixed Price Addition -->
+          <div class="flex items-center gap-1.5 bg-gray-950 px-2.5 py-1.5 rounded-lg border border-gray-800">
+            <span class="text-gray-300 font-semibold">💰 Fixed Price Addition:</span>
+            <span class="text-gray-500 font-mono">+£</span>
+            <input type="number" id="quick-fixed-price" min="0" max="10" step="0.05" value="0.20" class="w-16 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-emerald-400 font-mono font-bold text-xs text-right">
+            <button onclick="applyFixedPriceToAll()" class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded text-xs font-semibold transition ml-1">
+              Apply to All
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="resetRulesToDefaults()" class="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-800 transition">
+            ↺ Reset Defaults
           </button>
         </div>
       </div>
@@ -208,50 +243,112 @@
   <div id="tab-push" class="hidden space-y-6">
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-      <!-- Section 1: Fake Customer Sandbox Test -->
+      <!-- Section 1: Test Customer Sandbox & Push Testing -->
       <div class="bg-[var(--card)] border border-gray-800 rounded-xl p-5 space-y-4">
         <div>
           <h2 class="text-base font-bold text-white flex items-center gap-2">
-            <span>🧪</span> Sandbox Verification on Fake Customer
+            <span>🧪</span> Test Customer Sandbox & API Push Engine
           </h2>
           <p class="text-xs text-gray-400 mt-1">
-            Safely test the rating engine against Billing API using the test account <code>TEST-JAN-2027</code> before touching any real customers.
+            Safely test the rating engine and live price push against Despatch Cloud Billing API using your test customer (e.g. <code>test Jan</code>).
           </p>
         </div>
 
-        <div class="space-y-3 pt-1">
-          <!-- Step 1 -->
-          <div class="p-3.5 bg-gray-900 rounded-lg border border-gray-800 space-y-2">
+        <div class="space-y-4 pt-1">
+          <!-- Step 1: Create / Ensure Test Customer -->
+          <div class="p-4 bg-gray-900 rounded-xl border border-gray-800 space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-white">Step 1: Create Test Customer</span>
-              <span class="badge bg-gray-800 text-gray-300">POST /api/create-customer</span>
+              <span class="text-xs font-semibold text-white flex items-center gap-1.5">
+                <span>👤</span> Step 1: Customer Creation / Setup
+              </span>
+              <span class="badge bg-gray-800 text-gray-300 font-mono">POST /api/create-customer</span>
             </div>
-            <p class="text-[11px] text-gray-400">Registers `TEST-JAN-2027` in Despatch Cloud Billing API.</p>
-            <button onclick="runTestCustomerCreate()" id="btn-create-test" class="bg-gray-800 hover:bg-gray-700 text-blue-400 border border-blue-500/30 text-xs px-3 py-1.5 rounded-lg font-medium transition">
-              Create Test Customer
-            </button>
-            <div id="test-cust-result" class="hidden text-xs font-mono p-2 bg-black rounded border border-gray-800 text-emerald-400"></div>
+            <p class="text-[11px] text-gray-400">Customer Name and DCID are set identical as required by Despatch Cloud.</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="text-[11px] text-gray-400 block mb-1">Customer Name:</label>
+                <input type="text" id="test-cust-name" value="test Jan" oninput="syncTestDcId(this.value)" 
+                       class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white font-medium focus:outline-none focus:border-blue-500">
+              </div>
+              <div>
+                <label class="text-[11px] text-gray-400 block mb-1">Customer DCID (Auto-Identical):</label>
+                <input type="text" id="test-cust-dcid" value="test Jan" 
+                       class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-blue-500">
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              <button onclick="runTestCustomerCreate()" id="btn-create-test" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold transition">
+                Register / Verify Customer
+              </button>
+              <div id="test-cust-result" class="hidden text-xs font-medium px-3 py-1.5 rounded-lg border"></div>
+            </div>
           </div>
 
-          <!-- Step 2 -->
-          <div class="p-3.5 bg-gray-900 rounded-lg border border-gray-800 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-white">Step 2: Push Test Rates</span>
-              <span class="badge bg-gray-800 text-gray-300">POST /api/prices/update-customer-prices</span>
+          <!-- Step 2: Rate Playground & Push -->
+          <div class="p-4 bg-gray-900 rounded-xl border border-gray-800 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span class="text-xs font-semibold text-white flex items-center gap-1.5">
+                <span>📦</span> Step 2: Rate Card Sandbox & Push to Billing API
+              </span>
+              <span class="badge bg-gray-800 text-gray-300 font-mono">POST /api/prices/update-customer-prices</span>
             </div>
-            <p class="text-[11px] text-gray-400">Pushes test rate cards to `TEST-JAN-2027` and confirms Billing API accepts the update.</p>
-            <button onclick="runTestRatePush()" id="btn-push-test" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold transition">
-              Push Test Rates to Billing API
-            </button>
-            <div id="test-push-result" class="hidden text-xs font-mono p-2 bg-black rounded border border-gray-800 text-emerald-400"></div>
+            <p class="text-[11px] text-gray-400">Preview calculated rate cards with courier markups applied, play around with base prices, and push live to Billing API.</p>
+
+            <!-- Test Customer Selector & Quick Stats -->
+            <div class="flex flex-wrap items-center justify-between gap-3 p-3 bg-gray-950 rounded-lg border border-gray-800 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="text-gray-400">Target Customer:</span>
+                <select id="sandbox-customer-select" onchange="loadSandboxRates()" class="bg-gray-800 border border-gray-700 rounded px-2.5 py-1 text-xs text-white font-semibold">
+                  <option value="test Jan">test Jan</option>
+                </select>
+                <button onclick="loadSandboxRates()" class="text-xs text-blue-400 hover:underline">🔄 Reload</button>
+              </div>
+              <div class="flex items-center gap-3">
+                <span>Rates: <strong class="text-white" id="sandbox-rate-count">0</strong></span>
+                <span>Avg: <strong class="text-emerald-400" id="sandbox-avg-inc">+0.0%</strong></span>
+                <span>Diff: <strong class="text-emerald-400" id="sandbox-total-diff">+£0.00</strong></span>
+              </div>
+            </div>
+
+            <!-- Rate Table -->
+            <div class="border border-gray-800 rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-gray-950 text-gray-400 uppercase text-[10px] sticky top-0 border-b border-gray-800">
+                  <tr>
+                    <th class="p-2">Courier</th>
+                    <th class="p-2">Service</th>
+                    <th class="p-2 text-right">Base £</th>
+                    <th class="p-2 text-right">% Mark</th>
+                    <th class="p-2 text-right">+Fixed</th>
+                    <th class="p-2 text-right">New £</th>
+                    <th class="p-2 text-right">Diff</th>
+                  </tr>
+                </thead>
+                <tbody id="sandbox-rates-tbody" class="divide-y divide-gray-800/60 font-mono text-[11px]">
+                  <tr><td colspan="7" class="p-4 text-center text-gray-500 font-sans">Loading rates...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <button onclick="runTestRatePush()" id="btn-push-test" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2 rounded-lg font-semibold transition shadow-md flex items-center gap-1.5">
+                <span>🚀</span> Push Rates to Billing API Now
+              </button>
+              <div id="test-push-result" class="hidden text-xs font-medium px-3 py-1.5 rounded-lg border"></div>
+            </div>
           </div>
         </div>
 
         <!-- Live Server Response Log -->
         <div class="space-y-1 pt-1 font-mono text-xs">
-          <div class="text-[10px] text-gray-400 uppercase font-sans">Billing API Live Response:</div>
-          <pre id="server-response-view" class="bg-black/80 border border-gray-800 rounded-lg p-3 text-emerald-400 overflow-x-auto text-[11px] max-h-48">
-// Ready. Click Step 1 or Step 2 to execute live API calls.</pre>
+          <div class="text-[10px] text-gray-400 uppercase font-sans flex items-center justify-between">
+            <span>Billing API Live Response:</span>
+            <span id="response-timestamp" class="text-gray-500 text-[10px]"></span>
+          </div>
+          <pre id="server-response-view" class="bg-black/80 border border-gray-800 rounded-lg p-3 text-emerald-400 overflow-x-auto text-[11px] max-h-48 font-mono">
+// Ready. Click Register or Push Rates to execute live Billing API calls.</pre>
         </div>
       </div>
 
@@ -369,6 +466,7 @@
       await loadStatus();
       await loadRules();
       await loadCustomers();
+      await loadSandboxRates();
       await loadAuditLogs();
     }
 
@@ -441,28 +539,57 @@
         rulesData.forEach(r => {
           const info = getCarrierInfo(r.carrier_name, r.carrier_code);
           const div = document.createElement('div');
-          div.className = 'p-3.5 bg-gray-900/60 rounded-xl border border-gray-800 hover:border-gray-700 flex items-center justify-between gap-4 transition';
+          div.className = 'p-4 bg-gray-900/60 rounded-xl border border-gray-800 hover:border-gray-700 flex flex-col justify-between gap-3 transition';
+          const fixedGbp = ((Number(r.fixed_markup_pence) || 0) / 100).toFixed(2);
+          const isActive = r.active !== 0;
+
           div.innerHTML = `
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="w-16 h-10 ${info.bg} rounded-lg flex items-center justify-center p-1.5 shadow-sm border border-gray-700/60 overflow-hidden flex-shrink-0">
-                ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-full max-w-full object-contain" />` : `<span class="font-bold text-xs text-white">${info.name}</span>`}
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-14 h-9 ${info.bg} rounded-lg flex items-center justify-center p-1 shadow-sm border border-gray-700/60 overflow-hidden flex-shrink-0">
+                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-full max-w-full object-contain" />` : `<span class="font-bold text-xs text-white">${info.name}</span>`}
+                </div>
+                <div class="min-w-0">
+                  <div class="font-semibold text-xs text-white truncate">${info.name}</div>
+                  <div class="text-[10px] text-gray-500 font-mono">${r.carrier_code || ''}</div>
+                </div>
               </div>
-              <div class="min-w-0">
-                <div class="font-semibold text-xs text-white truncate">${info.name}</div>
-                <div class="text-[10px] text-gray-500 font-mono">${r.carrier_code || ''}</div>
+              <label class="flex items-center gap-1.5 cursor-pointer text-xs">
+                <input type="checkbox" id="active-${r.id}" ${isActive ? 'checked' : ''} onchange="updateLivePreview(${r.id})" class="rounded border-gray-700 bg-gray-800 text-blue-600 focus:ring-0">
+                <span class="text-[11px] text-gray-400">Active</span>
+              </label>
+            </div>
+
+            <div class="space-y-2 pt-1 border-t border-gray-800/80">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] text-gray-400">Percentage Mark:</span>
+                <div class="flex items-center gap-1.5">
+                  <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent || 0}" class="w-20 accent-blue-500" id="slider-${r.id}" oninput="onSliderInput(${r.id}, this.value)">
+                  <input type="number" min="0" max="30" step="0.1" value="${r.increase_percent || 0}" id="num-${r.id}" 
+                         class="w-14 bg-gray-800 text-blue-400 font-mono font-bold text-xs text-right border border-gray-700 rounded px-1.5 py-0.5"
+                         oninput="onNumberInput(${r.id}, this.value)">
+                  <span class="text-xs text-gray-400 font-mono">%</span>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] text-gray-400">Fixed Markup:</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs text-gray-500 font-mono">+£</span>
+                  <input type="number" min="0" max="10" step="0.01" value="${fixedGbp}" id="fixed-${r.id}" 
+                         class="w-16 bg-gray-800 text-emerald-400 font-mono font-bold text-xs text-right border border-gray-700 rounded px-1.5 py-0.5"
+                         oninput="updateLivePreview(${r.id})">
+                </div>
               </div>
             </div>
-            <div class="flex items-center gap-2 flex-shrink-0">
-              <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent}" class="w-24 sm:w-28 accent-blue-500" id="slider-${r.id}" oninput="onSliderInput(${r.id}, this.value)">
-              <div class="w-14 text-right">
-                <input type="number" min="0" max="30" step="0.1" value="${r.increase_percent}" id="num-${r.id}" 
-                       class="w-14 bg-gray-800 text-blue-400 font-mono font-bold text-xs text-right border border-gray-700 rounded px-1 py-0.5"
-                       onchange="onNumberInput(${r.id}, this.value)">
-              </div>
-              <span class="text-xs text-gray-400">%</span>
+
+            <div class="p-2 rounded bg-black/40 border border-gray-800/60 text-[11px] flex items-center justify-between text-gray-400">
+              <span>Sample £5.00 parcel:</span>
+              <span class="font-mono font-semibold text-white" id="preview-${r.id}">...</span>
             </div>
           `;
           container.appendChild(div);
+          updateLivePreview(r.id);
         });
       } catch (e) {
         console.error('Error loading rules:', e);
@@ -472,31 +599,110 @@
     function onSliderInput(id, val) {
       const numInput = document.getElementById('num-' + id);
       if (numInput) numInput.value = val;
+      updateLivePreview(id);
     }
 
     function onNumberInput(id, val) {
       const slider = document.getElementById('slider-' + id);
       if (slider) slider.value = val;
+      updateLivePreview(id);
+    }
+
+    function updateLivePreview(id) {
+      const numInput = document.getElementById('num-' + id);
+      const fixedInput = document.getElementById('fixed-' + id);
+      const activeCheck = document.getElementById('active-' + id);
+      const previewEl = document.getElementById('preview-' + id);
+      if (!previewEl) return;
+
+      const active = activeCheck ? activeCheck.checked : true;
+      if (!active) {
+        previewEl.innerHTML = '<span class="text-gray-500">Excluded (0%)</span>';
+        return;
+      }
+
+      const pct = parseFloat(numInput ? numInput.value : 0) || 0;
+      const fixed = parseFloat(fixedInput ? fixedInput.value : 0) || 0;
+
+      const base = 5.00;
+      const afterPct = base * (1 + pct / 100);
+      const finalPrice = afterPct + fixed;
+      const diff = finalPrice - base;
+
+      previewEl.innerHTML = `£${finalPrice.toFixed(2)} <span class="text-emerald-400 text-[10px]">(+£${diff.toFixed(2)})</span>`;
+    }
+
+    function applyFixedPercentageToAll() {
+      const val = parseFloat(document.getElementById('quick-fixed-pct')?.value) || 0;
+      rulesData.forEach(r => {
+        const slider = document.getElementById('slider-' + r.id);
+        const num = document.getElementById('num-' + r.id);
+        if (slider) slider.value = val;
+        if (num) num.value = val;
+        updateLivePreview(r.id);
+      });
+    }
+
+    function applyFixedPriceToAll() {
+      const val = parseFloat(document.getElementById('quick-fixed-price')?.value) || 0;
+      rulesData.forEach(r => {
+        const fixed = document.getElementById('fixed-' + r.id);
+        if (fixed) fixed.value = val.toFixed(2);
+        updateLivePreview(r.id);
+      });
+    }
+
+    function resetRulesToDefaults() {
+      const defaultPcts = {
+        'DPD': 3.9, 'YODC2C': 2.0, 'RM': 3.5, 'EvRi': 2.5, 'DHL': 4.0, 'DHLC2C': 4.0,
+        'UPS': 3.0, 'INPOST': 3.0, 'PC': 3.5, 'AGL': 3.0, 'PPI': 3.0, 'API TEST': 0.0
+      };
+      rulesData.forEach(r => {
+        const defPct = defaultPcts[r.carrier_code] !== undefined ? defaultPcts[r.carrier_code] : 3.0;
+        const slider = document.getElementById('slider-' + r.id);
+        const num = document.getElementById('num-' + r.id);
+        const fixed = document.getElementById('fixed-' + r.id);
+        const active = document.getElementById('active-' + r.id);
+        if (slider) slider.value = defPct;
+        if (num) num.value = defPct;
+        if (fixed) fixed.value = '0.00';
+        if (active) active.checked = true;
+        updateLivePreview(r.id);
+      });
     }
 
     async function saveRules() {
       const updatedRules = rulesData.map(r => {
         const numInput = document.getElementById('num-' + r.id);
+        const fixedInput = document.getElementById('fixed-' + r.id);
+        const activeCheck = document.getElementById('active-' + r.id);
+        const fixedGbp = parseFloat(fixedInput ? fixedInput.value : 0) || 0;
+
         return {
           carrier_name: r.carrier_name,
+          carrier_code: r.carrier_code,
           increase_percent: numInput ? parseFloat(numInput.value) : r.increase_percent,
-          active: 1
+          fixed_markup_pence: Math.round(fixedGbp * 100),
+          active: activeCheck ? (activeCheck.checked ? 1 : 0) : 1
         };
       });
       const cutoff = document.getElementById('cutoff-date-input')?.value;
 
-      await fetch('/api/rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rules: updatedRules, cutoffDate: cutoff })
-      });
-      alert('✓ Courier base percentage increases saved successfully!');
-      await loadStatus();
+      try {
+        const res = await fetch('/api/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rules: updatedRules, cutoffDate: cutoff })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        alert('✓ Courier base percentage & fixed price increases saved successfully!');
+        await loadStatus();
+        if (document.getElementById('sandbox-customer-select')) {
+          await loadSandboxRates();
+        }
+      } catch (err) {
+        alert('Failed to save rules: ' + err.message);
+      }
     }
 
     async function loadCustomers() {
@@ -776,26 +982,154 @@
       }
     }
 
+    function syncTestDcId(val) {
+      const dcInput = document.getElementById('test-cust-dcid');
+      if (dcInput) dcInput.value = val;
+    }
+
     async function runTestCustomerCreate() {
       const btn = document.getElementById('btn-create-test');
       const resEl = document.getElementById('test-cust-result');
       const view = document.getElementById('server-response-view');
+      const timeEl = document.getElementById('response-timestamp');
+      const nameInput = document.getElementById('test-cust-name');
+      const dcInput = document.getElementById('test-cust-dcid');
+
+      const name = (nameInput?.value || 'test Jan').trim();
+      const dcId = (dcInput?.value || name).trim();
+
       btn.innerText = 'Creating in Billing API...';
+      btn.disabled = true;
+
       try {
         const res = await fetch('/api/sandbox/create-customer', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dc_id: 'TEST-JAN-2027', name: 'Test Customer Jan 2027' })
+          body: JSON.stringify({ dc_id: dcId, name: name })
         });
         const data = await res.json();
-        btn.innerText = '✓ Created';
-        resEl.classList.remove('hidden');
-        resEl.innerText = '✓ Customer TEST-JAN-2027 registered in Billing API.';
-        view.innerText = JSON.stringify(data, null, 2);
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to create customer');
+        }
+
+        btn.innerText = '✓ Verified';
+        resEl.className = 'text-xs font-medium px-3 py-1.5 rounded-lg border bg-emerald-500/10 border-emerald-500/30 text-emerald-400 block';
+        resEl.innerText = data.alreadyExists
+          ? `✓ Customer "${name}" is registered and ready in Billing API!`
+          : `✓ Successfully created customer "${name}" (${dcId}) in Billing API!`;
+
+        if (view) view.innerText = JSON.stringify(data, null, 2);
+        if (timeEl) timeEl.innerText = new Date().toLocaleTimeString();
+
+        // Update sandbox customer selector dropdown
+        const select = document.getElementById('sandbox-customer-select');
+        if (select) {
+          let opt = Array.from(select.options).find(o => o.value === dcId);
+          if (!opt) {
+            opt = document.createElement('option');
+            opt.value = dcId;
+            opt.textContent = `${name} (${dcId})`;
+            select.appendChild(opt);
+          }
+          select.value = dcId;
+        }
+
+        await loadSandboxRates();
+        await loadStatus();
       } catch (e) {
-        btn.innerText = 'Failed';
-        resEl.classList.remove('hidden');
+        btn.innerText = 'Registration Failed';
+        resEl.className = 'text-xs font-medium px-3 py-1.5 rounded-lg border bg-red-500/10 border-red-500/30 text-red-400 block';
         resEl.innerText = 'Error: ' + e.message;
+        if (view) view.innerText = e.message;
+      } finally {
+        btn.disabled = false;
+        setTimeout(() => { btn.innerText = 'Register / Verify Customer'; }, 3000);
+      }
+    }
+
+    let currentSandboxRates = [];
+
+    async function loadSandboxRates() {
+      const select = document.getElementById('sandbox-customer-select');
+      const dcId = select ? select.value : 'test Jan';
+      const tbody = document.getElementById('sandbox-rates-tbody');
+      if (!tbody) return;
+
+      tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 font-sans">Calculating customer rates...</td></tr>';
+
+      try {
+        const res = await fetch(`/api/rates/preview?customer_dc_id=${encodeURIComponent(dcId)}`);
+        const data = await res.json();
+        currentSandboxRates = data.rates || [];
+
+        const countEl = document.getElementById('sandbox-rate-count');
+        if (countEl) countEl.innerText = currentSandboxRates.length;
+        const avgEl = document.getElementById('sandbox-avg-inc');
+        if (avgEl) avgEl.innerText = '+' + (data.summary?.averageIncreasePercent || '0.0') + '%';
+        const diffEl = document.getElementById('sandbox-total-diff');
+        if (diffEl) diffEl.innerText = '+£' + (data.summary?.totalDifference || '0.00');
+
+        tbody.innerHTML = '';
+        if (currentSandboxRates.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-400 font-sans">No rate cards found for this customer.</td></tr>';
+          return;
+        }
+
+        currentSandboxRates.forEach(r => {
+          const info = getCarrierInfo(null, r.courier_code);
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-gray-800/40 transition';
+          const oldGbp = (r.old_price / 100).toFixed(2);
+          const newGbp = (r.new_price / 100).toFixed(2);
+          const diffGbp = (r.diff_pence / 100).toFixed(2);
+          const fixedPence = r.applied_fixed_pence || 0;
+          const fixedGbp = fixedPence > 0 ? `+£${(fixedPence / 100).toFixed(2)}` : '£0.00';
+
+          tr.innerHTML = `
+            <td class="p-2 font-semibold text-white">
+              <span class="inline-block px-1.5 py-0.5 rounded text-[10px] ${info.bg} text-white">${info.name}</span>
+            </td>
+            <td class="p-2 text-gray-300 font-sans">${r.service_name}</td>
+            <td class="p-2 text-right text-gray-300 font-mono">
+              <div class="flex items-center justify-end gap-1">
+                <span>£</span>
+                <input type="number" step="0.01" min="0" value="${oldGbp}" 
+                       class="w-16 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-right font-mono text-white text-[11px]"
+                       onchange="updateSandboxRatePrice('${r.customer_dc_id}', ${r.service_id}, ${r.zone_id}, ${r.weight_class_id}, this.value, '${r.courier_code}')">
+              </div>
+            </td>
+            <td class="p-2 text-right ${r.applied_percent > 0 ? 'text-blue-400 font-bold' : 'text-gray-500'}">+${r.applied_percent.toFixed(1)}%</td>
+            <td class="p-2 text-right ${fixedPence > 0 ? 'text-emerald-400 font-bold' : 'text-gray-500'}">${fixedGbp}</td>
+            <td class="p-2 text-right font-bold text-white">£${newGbp}</td>
+            <td class="p-2 text-right text-emerald-400">+£${diffGbp}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-400 font-sans">Error: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function updateSandboxRatePrice(dcId, serviceId, zoneId, weightClassId, priceGbp, courierCode) {
+      const pricePence = Math.round(parseFloat(priceGbp) * 100);
+      try {
+        await fetch(`/api/customers/${encodeURIComponent(dcId)}/rates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rates: [{
+              service_id: serviceId,
+              zone_id: zoneId,
+              weight_class_id: weightClassId,
+              price: pricePence,
+              sub_price: Math.round(pricePence * 0.2),
+              courier_code: courierCode
+            }]
+          })
+        });
+        await loadSandboxRates();
+      } catch (e) {
+        alert('Failed to update base rate: ' + e.message);
       }
     }
 
@@ -803,22 +1137,38 @@
       const btn = document.getElementById('btn-push-test');
       const resEl = document.getElementById('test-push-result');
       const view = document.getElementById('server-response-view');
+      const timeEl = document.getElementById('response-timestamp');
+      const select = document.getElementById('sandbox-customer-select');
+      const dcId = select ? select.value : 'test Jan';
+
       btn.innerText = 'Posting to Billing API...';
+      btn.disabled = true;
+
       try {
         const res = await fetch('/api/sandbox/push-rates', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customer_dc_id: 'TEST-JAN-2027' })
+          body: JSON.stringify({ customer_dc_id: dcId })
         });
         const data = await res.json();
-        btn.innerText = '✓ Rates Updated';
-        resEl.classList.remove('hidden');
-        resEl.innerText = '✓ Success: Rates accepted and verified in Billing API.';
-        view.innerText = JSON.stringify(data, null, 2);
+        if (!res.ok) {
+          throw new Error(data.error || 'HTTP ' + res.status);
+        }
+
+        btn.innerText = '✓ Rates Accepted';
+        resEl.className = 'text-xs font-medium px-3 py-1.5 rounded-lg border bg-emerald-500/10 border-emerald-500/30 text-emerald-400 block';
+        resEl.innerText = `✓ Success: ${data.ratesUpdated} rate cards pushed and verified by Billing API!`;
+
+        if (view) view.innerText = JSON.stringify(data, null, 2);
+        if (timeEl) timeEl.innerText = new Date().toLocaleTimeString();
       } catch (e) {
-        btn.innerText = 'Failed';
-        resEl.classList.remove('hidden');
+        btn.innerText = 'Push Failed';
+        resEl.className = 'text-xs font-medium px-3 py-1.5 rounded-lg border bg-red-500/10 border-red-500/30 text-red-400 block';
         resEl.innerText = 'Error: ' + e.message;
+        if (view) view.innerText = e.message;
+      } finally {
+        btn.disabled = false;
+        setTimeout(() => { btn.innerText = '🚀 Push Rates to Billing API Now'; }, 3000);
       }
     }
 
@@ -890,6 +1240,9 @@
       if (activeBtn) {
         activeBtn.classList.remove('border-transparent', 'text-gray-400');
         activeBtn.classList.add('border-blue-500', 'text-blue-400');
+      }
+      if (tabName === 'push') {
+        loadSandboxRates();
       }
     }
 
