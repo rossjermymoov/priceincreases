@@ -225,7 +225,7 @@
       <div class="flex items-center gap-2">
         <span class="text-sm">🏢</span>
         <span id="banner-cust-name" class="font-semibold text-white"></span>
-        <span id="banner-cust-id" class="badge bg-blue-500/20 text-blue-300 font-mono"></span>
+        <span id="banner-cust-id" class="hidden"></span>
         <span id="banner-cust-meta" class="text-gray-400 ml-2"></span>
       </div>
       <button onclick="resetCustomerFilter()" class="text-blue-400 hover:text-white underline text-xs font-medium">Show All Customers</button>
@@ -571,8 +571,8 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         opt.value = c.dc_id;
         const isExcluded = Number(c.is_inactive_excluded) === 1;
         opt.textContent = isExcluded
-          ? `🚫 ${c.name || 'Unnamed'} (${c.dc_id}) [No invoice >12m]`
-          : `${c.name || 'Unnamed'} (${c.dc_id})`;
+          ? `🚫 ${c.name || 'Unnamed'} [No invoice >12m]`
+          : `${c.name || 'Unnamed'}`;
         if (c.dc_id === currentVal) opt.selected = true;
         select.appendChild(opt);
       });

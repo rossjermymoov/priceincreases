@@ -364,7 +364,7 @@ async function auditCustomerInvoices(customers) {
   const now = Date.now();
   const twelveMonthsAgo = now - (365 * 24 * 3600 * 1000);
 
-  const chunkSize = 6;
+  const chunkSize = 10;
   let activeCount = 0;
   let excludedCount = 0;
 
@@ -375,20 +375,33 @@ async function auditCustomerInvoices(customers) {
       let totalInvs = 0;
       let isExcluded = 1;
 
-      try {
-        const invRes = await billingApi.getCustomerInvoices(c.dc_id);
-        const invs = invRes.data || (Array.isArray(invRes) ? invRes : []);
-        totalInvs = invs.length;
-        if (invs.length > 0) {
-          const last = invs[invs.length - 1];
-          lastInvDate = last.generation_date || last.created_at || null;
-          const lastTime = lastInvDate ? new Date(lastInvDate).getTime() : 0;
-          if (lastTime >= twelveMonthsAgo) {
-            isExcluded = 0;
+      // Rule 1: All customers with DC ID starting with HOF are excluded
+      const isHof = (c.dc_id || '').toUpperCase().startsWith('HOF');
+
+      if (!isHof) {
+        try {
+          const invRes = await billingApi.getCustomerInvoices(c.dc_id);
+          const invs = invRes.data || (Array.isArray(invRes) ? invRes : []);
+          totalInvs = invs.length;
+
+          // Rule 2: Invoices must have total > 0 or subtotal > 0 (ignore £0 automated ledger dummies)
+          const billedInvs = invs.filter(inv => {
+            const tot = Number(inv.total || 0);
+            const sub = Number(inv.subtotal || 0);
+            return tot > 0 || sub > 0;
+          });
+
+          if (billedInvs.length > 0) {
+            const last = billedInvs[billedInvs.length - 1];
+            lastInvDate = last.generation_date || last.created_at || null;
+            const lastTime = lastInvDate ? new Date(lastInvDate).getTime() : 0;
+            if (lastTime >= twelveMonthsAgo) {
+              isExcluded = 0;
+            }
           }
+        } catch (e) {
+          isExcluded = 1;
         }
-      } catch (e) {
-        isExcluded = 1;
       }
 
       if (isExcluded === 0) activeCount++;
@@ -401,7 +414,7 @@ async function auditCustomerInvoices(customers) {
     }));
   }
 
-  console.log(`[InvoiceGate] Audit complete: ${activeCount} active, ${excludedCount} excluded (>12m no invoice).`);
+  console.log(`[InvoiceGate] Audit complete: ${activeCount} active, ${excludedCount} excluded (>12m no non-zero invoice or HOF).`);
   return { activeCount, excludedCount, total: customers.length };
 }
 
@@ -432,8 +445,12 @@ async function start() {
   try {
     const custs = await db.query('SELECT * FROM customers');
     if (custs.length > 0) {
-      // Check if invoice audit is needed
-      const needsAudit = custs.some(c => c.is_inactive_excluded === undefined || c.is_inactive_excluded === null);
+      // Check if invoice audit is needed (or if HOF accounts are not yet excluded)
+      const needsAudit = custs.some(c => 
+        c.is_inactive_excluded === undefined || 
+        c.is_inactive_excluded === null || 
+        ((c.dc_id || '').toUpperCase().startsWith('HOF') && c.is_inactive_excluded !== 1)
+      );
       if (needsAudit) {
         auditCustomerInvoices(custs).then(res => {
           console.log(`[InvoiceGate] Background audit complete: ${res.activeCount} active, ${res.excludedCount} excluded.`);
