@@ -19,18 +19,26 @@ app.get('/api/status', async (req, res) => {
     const rateCount = await db.query('SELECT count(*) as count FROM customer_rates');
     const statusSetting = await db.query("SELECT value FROM campaign_settings WHERE key = 'campaign_status'");
     const dateSetting = await db.query("SELECT value FROM campaign_settings WHERE key = 'scheduled_date'");
+    const exclude12mSetting = await db.query("SELECT value FROM campaign_settings WHERE key = 'exclude_no_invoice_12m'");
+
+    const allCusts = await db.query('SELECT * FROM customers');
+    const activeInvoicedCount = allCusts.filter(c => !c.is_inactive_excluded || c.is_inactive_excluded === 0).length;
+    const excludedInactiveCount = allCusts.length - activeInvoicedCount;
 
     res.json({
       status: 'ok',
       dbDriver: db.dbDriver,
       counts: {
         customers: Number(custCount[0]?.count || 0),
+        activeInvoicedCustomers: activeInvoicedCount,
+        excludedInactiveCustomers: excludedInactiveCount,
         couriers: Number(courierCount[0]?.count || 0),
         rates: Number(rateCount[0]?.count || 0)
       },
       campaign: {
         status: statusSetting[0]?.value || 'DRAFT',
         scheduledDate: dateSetting[0]?.value || '2027-01-01T00:01:00Z',
+        excludeNoInvoice12m: exclude12mSetting[0]?.value !== '0',
         progress: scheduler.progress
       }
     });
@@ -74,12 +82,18 @@ app.post('/api/sync', async (req, res) => {
       await db.query(sSql, [s.id, s.client_courier_id, s.name, s.code]);
     }
 
-    // Populate baseline rates for all customers
-    await ensureRatesForCustomers(customers);
+    // Audit customer invoices (12-month inactivity exclusion)
+    const auditResult = await auditCustomerInvoices(customers);
+
+    // Populate baseline rates for active customers
+    const activeCusts = customers.filter(c => c.is_inactive_excluded !== 1);
+    await ensureRatesForCustomers(activeCusts);
 
     res.json({
       success: true,
       customersSynced: customers.length,
+      activeInvoicedCustomers: auditResult.activeCount,
+      excludedInactiveCustomers: auditResult.excludedCount,
       couriersSynced: couriers.length,
       servicesSynced: services.length
     });
@@ -92,9 +106,31 @@ app.post('/api/sync', async (req, res) => {
 // 3. Customers List
 app.get('/api/customers', async (req, res) => {
   try {
-    const list = await db.query('SELECT * FROM customers');
+    const includeExcluded = req.query.include_excluded === '1' || req.query.include_excluded === 'true';
+    const exclude12mSetting = await db.query("SELECT value FROM campaign_settings WHERE key = 'exclude_no_invoice_12m'");
+    const exclude12m = exclude12mSetting[0]?.value !== '0';
+
+    let list = await db.query('SELECT * FROM customers');
+    if (!includeExcluded && exclude12m) {
+      list = list.filter(c => !c.is_inactive_excluded || c.is_inactive_excluded === 0);
+    }
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Toggle 12-Month Inactivity Exclusion Gate
+app.post('/api/settings/invoice-gate', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const val = enabled ? '1' : '0';
+    const upsertSql = db.dbDriver === 'postgres'
+      ? 'INSERT INTO campaign_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
+      : 'INSERT OR REPLACE INTO campaign_settings (key, value) VALUES (?, ?)';
+    await db.query(upsertSql, ['exclude_no_invoice_12m', val]);
+    res.json({ success: true, excludeNoInvoice12m: Boolean(enabled) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -323,6 +359,52 @@ app.get('/api/export-csv', async (req, res) => {
   }
 });
 
+async function auditCustomerInvoices(customers) {
+  console.log(`[InvoiceGate] Auditing 12-month invoice activity for ${customers.length} customers...`);
+  const now = Date.now();
+  const twelveMonthsAgo = now - (365 * 24 * 3600 * 1000);
+
+  const chunkSize = 6;
+  let activeCount = 0;
+  let excludedCount = 0;
+
+  for (let i = 0; i < customers.length; i += chunkSize) {
+    const chunk = customers.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(async c => {
+      let lastInvDate = null;
+      let totalInvs = 0;
+      let isExcluded = 1;
+
+      try {
+        const invRes = await billingApi.getCustomerInvoices(c.dc_id);
+        const invs = invRes.data || (Array.isArray(invRes) ? invRes : []);
+        totalInvs = invs.length;
+        if (invs.length > 0) {
+          const last = invs[invs.length - 1];
+          lastInvDate = last.generation_date || last.created_at || null;
+          const lastTime = lastInvDate ? new Date(lastInvDate).getTime() : 0;
+          if (lastTime >= twelveMonthsAgo) {
+            isExcluded = 0;
+          }
+        }
+      } catch (e) {
+        isExcluded = 1;
+      }
+
+      if (isExcluded === 0) activeCount++;
+      else excludedCount++;
+
+      const updateSql = db.dbDriver === 'postgres'
+        ? 'UPDATE customers SET last_invoice_date = $1, total_invoices = $2, is_inactive_excluded = $3 WHERE dc_id = $4'
+        : 'UPDATE customers SET last_invoice_date = ?, total_invoices = ?, is_inactive_excluded = ? WHERE dc_id = ?';
+      await db.query(updateSql, [lastInvDate, totalInvs, isExcluded, c.dc_id]);
+    }));
+  }
+
+  console.log(`[InvoiceGate] Audit complete: ${activeCount} active, ${excludedCount} excluded (>12m no invoice).`);
+  return { activeCount, excludedCount, total: customers.length };
+}
+
 async function ensureRatesForCustomers(customers) {
   const sampleServices = [
     { service_id: 764, name: 'DPD Next Day', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 545, sub: 100 },
@@ -350,8 +432,19 @@ async function start() {
   try {
     const custs = await db.query('SELECT * FROM customers');
     if (custs.length > 0) {
-      await ensureRatesForCustomers(custs);
-      console.log(`[RateShift] Rate cards verified/seeded across all ${custs.length} customers.`);
+      // Check if invoice audit is needed
+      const needsAudit = custs.some(c => c.is_inactive_excluded === undefined || c.is_inactive_excluded === null);
+      if (needsAudit) {
+        auditCustomerInvoices(custs).then(res => {
+          console.log(`[InvoiceGate] Background audit complete: ${res.activeCount} active, ${res.excludedCount} excluded.`);
+        }).catch(err => {
+          console.warn('[InvoiceGate] Background audit error:', err.message);
+        });
+      }
+
+      const activeCusts = custs.filter(c => c.is_inactive_excluded !== 1);
+      await ensureRatesForCustomers(activeCusts.length > 0 ? activeCusts : custs);
+      console.log(`[RateShift] Rate cards verified/seeded across ${custs.length} customers.`);
     }
   } catch (e) {
     console.warn('[RateShift] Initial rate verification warning:', e.message);

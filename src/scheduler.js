@@ -61,16 +61,22 @@ class PricingScheduler {
     const cutoffDateStr = cutoffRow[0]?.value || '2026-09-01';
     const cutoffTimestamp = new Date(cutoffDateStr).getTime();
 
-    // 3. Fetch customers
+    // 3. Fetch 12-month invoice exclusion gate setting
+    const exclude12mRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'exclude_no_invoice_12m'");
+    const exclude12m = exclude12mRow[0]?.value !== '0'; // default true
+
+    // 4. Fetch customers
     let sql = 'SELECT * FROM customers';
     const params = [];
     if (customerDcId) {
       sql += ' WHERE dc_id = ?';
       params.push(customerDcId);
+    } else if (exclude12m) {
+      sql += ' WHERE (is_inactive_excluded = 0 OR is_inactive_excluded IS NULL)';
     }
     const customers = await db.query(sql, params);
 
-    // 4. Fetch rates
+    // 5. Fetch rates
     let rateSql = 'SELECT * FROM customer_rates';
     const rateParams = [];
     if (customerDcId) {
@@ -91,6 +97,11 @@ class PricingScheduler {
     const calculatedList = [];
 
     for (const c of customers) {
+      const isInactiveExcluded = Number(c.is_inactive_excluded) === 1;
+      if (exclude12m && isInactiveExcluded && !customerDcId) {
+        continue;
+      }
+
       const joinDate = c.created_at ? new Date(c.created_at).getTime() : 0;
       const isJoinedAfterCutoff = joinDate > cutoffTimestamp;
       const isManuallyExempt = Number(c.is_exempt) === 1;
@@ -101,7 +112,10 @@ class PricingScheduler {
         let appliedPct = 0;
         let exemptionReason = null;
 
-        if (isManuallyExempt) {
+        if (isInactiveExcluded) {
+          appliedPct = 0;
+          exemptionReason = 'Excluded: No invoice in last 12 months';
+        } else if (isManuallyExempt) {
           appliedPct = 0;
           exemptionReason = 'Manually Exempt';
         } else if (isJoinedAfterCutoff) {

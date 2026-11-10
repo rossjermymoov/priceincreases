@@ -83,10 +83,14 @@ async function query(sql, params = []) {
   }
 
   if (lower.startsWith('select * from customers')) {
-    if (params.length > 0) {
-      return store.data.customers.filter(c => c.dc_id === params[0]);
+    let list = [...store.data.customers];
+    if (lower.includes('is_inactive_excluded = 0') || lower.includes('is_inactive_excluded is null')) {
+      list = list.filter(c => !c.is_inactive_excluded || c.is_inactive_excluded === 0);
     }
-    return [...store.data.customers];
+    if (params.length > 0) {
+      list = list.filter(c => c.dc_id === params[0]);
+    }
+    return list;
   }
 
   if (lower.startsWith('select * from couriers')) {
@@ -109,7 +113,11 @@ async function query(sql, params = []) {
   }
 
   if (lower.includes("from campaign_settings where key =")) {
-    const key = params[0] || (lower.includes("'campaign_status'") ? 'campaign_status' : (lower.includes("'cutoff_date'") ? 'cutoff_date' : 'scheduled_date'));
+    const key = params[0] || (
+      lower.includes("'campaign_status'") ? 'campaign_status' :
+      (lower.includes("'cutoff_date'") ? 'cutoff_date' :
+      (lower.includes("'exclude_no_invoice_12m'") ? 'exclude_no_invoice_12m' : 'scheduled_date'))
+    );
     const val = store.data.campaign_settings[key];
     return val !== undefined ? [{ value: val }] : [];
   }
@@ -217,6 +225,18 @@ async function query(sql, params = []) {
     return [];
   }
 
+  if (lower.startsWith('update customers set last_invoice_date')) {
+    const [last_invoice_date, total_invoices, is_inactive_excluded, dc_id] = params;
+    const c = store.data.customers.find(x => x.dc_id === dc_id);
+    if (c) {
+      c.last_invoice_date = last_invoice_date;
+      c.total_invoices = total_invoices;
+      c.is_inactive_excluded = is_inactive_excluded;
+      store.save();
+    }
+    return [];
+  }
+
   if (lower.startsWith('update customer_rates set current_price_pence')) {
     const [newPrice, newSub, dcId, sId, zId, wId] = params;
     const r = store.data.customer_rates.find(
@@ -244,8 +264,14 @@ async function initDb() {
         created_at TEXT,
         billing_period TEXT,
         is_exempt INTEGER DEFAULT 0,
-        custom_increase_pct REAL DEFAULT NULL
+        custom_increase_pct REAL DEFAULT NULL,
+        last_invoice_date TEXT,
+        total_invoices INTEGER DEFAULT 0,
+        is_inactive_excluded INTEGER DEFAULT 0
       );
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_invoice_date TEXT;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS total_invoices INTEGER DEFAULT 0;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_inactive_excluded INTEGER DEFAULT 0;
       CREATE TABLE IF NOT EXISTS couriers (
         id INTEGER PRIMARY KEY,
         name TEXT,
@@ -311,6 +337,7 @@ async function initDb() {
     await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['cutoff_date', '2026-09-01']);
     await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['scheduled_date', '2027-01-01T00:01:00Z']);
     await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['campaign_status', 'DRAFT']);
+    await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['exclude_no_invoice_12m', '1']);
   }
 
   console.log(`[DB] Storage engine initialized: ${dbDriver.toUpperCase()}`);

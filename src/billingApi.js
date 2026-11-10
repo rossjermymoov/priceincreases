@@ -118,6 +118,21 @@ class BillingApiClient {
       }
     });
   }
+
+  // 9. Fetch Invoices for a Customer
+  async getCustomerInvoices(customerDcId, retries = 3) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await this.request(`/api/customers/${encodeURIComponent(customerDcId)}/invoices`);
+      } catch (err) {
+        if (attempt < retries && (err.status === 503 || err.status === 429)) {
+          await new Promise(r => setTimeout(r, 400 * attempt));
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
 }
 
 module.exports = new BillingApiClient();

@@ -63,10 +63,12 @@
   <!-- Quick Stat Bar -->
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
     <div class="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
-      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Customers Synced</div>
+      <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider mb-1">Active Customers (12m)</div>
       <div class="text-2xl font-bold text-white" id="stat-customers">...</div>
-      <div class="text-xs text-emerald-400 mt-1 flex items-center gap-1">
-        <span id="stat-eligible">...</span> <span class="text-gray-500">•</span> <span class="text-amber-400" id="stat-exempt">...</span>
+      <div class="text-xs mt-1 flex items-center gap-1.5" id="stat-cust-sub">
+        <span class="text-emerald-400 font-medium" id="stat-active-invoiced">...</span>
+        <span class="text-gray-500">•</span>
+        <span class="text-amber-400 font-medium" id="stat-excluded-stale">...</span>
       </div>
     </div>
 
@@ -135,6 +137,23 @@
         </div>
 
         <div class="space-y-4 pt-2">
+          <!-- 12-Month Inactive Customer Gate -->
+          <div class="p-3 bg-gray-900 border border-gray-700/80 rounded-lg space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-base">🛡️</span>
+                <div>
+                  <div class="text-xs font-semibold text-white">12-Month Inactivity Gate</div>
+                  <div class="text-[10px] text-gray-400">Exclude accounts with no invoice in the last 12 months</div>
+                </div>
+              </div>
+              <input type="checkbox" id="toggle-invoice-gate" checked class="w-4 h-4 accent-blue-600 rounded cursor-pointer" onchange="toggleInvoiceGate(this.checked)">
+            </div>
+            <div class="text-[11px] text-emerald-400 font-mono" id="gate-status-text">
+              ✓ Active: Customers without an invoice in last 12 months are completely excluded.
+            </div>
+          </div>
+
           <div class="space-y-1.5">
             <label class="text-xs font-medium text-gray-300">Join Date Exemption Cutoff</label>
             <input type="date" id="cutoff-date-input" value="2026-09-01" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500" onchange="saveRules()">
@@ -402,13 +421,50 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
-        document.getElementById('stat-customers').innerText = data.counts.customers;
+        const active = data.counts.activeInvoicedCustomers || data.counts.customers;
+        const excluded = data.counts.excludedInactiveCustomers || 0;
+        document.getElementById('stat-customers').innerText = active;
+        document.getElementById('stat-active-invoiced').innerText = `${active} Active`;
+        document.getElementById('stat-excluded-stale').innerText = `${excluded} Excluded (>12m)`;
         document.getElementById('stat-couriers').innerText = data.counts.couriers + ' Couriers';
         document.getElementById('stat-rates').innerText = data.counts.rates;
         document.getElementById('badge-campaign-status').innerText = data.campaign.status;
         document.getElementById('db-badge').innerText = data.dbDriver.toUpperCase() + ' Mode';
+
+        if (document.getElementById('toggle-invoice-gate')) {
+          document.getElementById('toggle-invoice-gate').checked = data.campaign.excludeNoInvoice12m;
+          updateGateStatusText(data.campaign.excludeNoInvoice12m);
+        }
       } catch (e) {
         console.error(e);
+      }
+    }
+
+    async function toggleInvoiceGate(enabled) {
+      try {
+        await fetch('/api/settings/invoice-gate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled })
+        });
+        updateGateStatusText(enabled);
+        await loadStatus();
+        await loadCustomers();
+        await loadRatesPreview();
+      } catch (e) {
+        alert('Failed to update 12-month inactivity gate: ' + e.message);
+      }
+    }
+
+    function updateGateStatusText(enabled) {
+      const el = document.getElementById('gate-status-text');
+      if (!el) return;
+      if (enabled) {
+        el.className = 'text-[11px] text-emerald-400 font-mono';
+        el.innerText = '✓ Active: Customers without an invoice in last 12 months are completely excluded.';
+      } else {
+        el.className = 'text-[11px] text-amber-400 font-mono';
+        el.innerText = '⚠ Gate Disabled: Stale accounts with no invoice in >12 months are included.';
       }
     }
 
@@ -508,13 +564,16 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
 
       const allOpt = document.createElement('option');
       allOpt.value = 'all';
-      allOpt.textContent = `👥 All Customers (${allCustomersList.length})`;
+      allOpt.textContent = `👥 All Active Customers (${allCustomersList.length})`;
       select.appendChild(allOpt);
 
       list.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c.dc_id;
-        opt.textContent = `${c.name || 'Unnamed'} (${c.dc_id})`;
+        const isExcluded = Number(c.is_inactive_excluded) === 1;
+        opt.textContent = isExcluded
+          ? `🚫 ${c.name || 'Unnamed'} (${c.dc_id}) [No invoice >12m]`
+          : `${c.name || 'Unnamed'} (${c.dc_id})`;
         if (c.dc_id === currentVal) opt.selected = true;
         select.appendChild(opt);
       });
@@ -544,7 +603,12 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       if (cust) {
         document.getElementById('banner-cust-name').textContent = cust.name || 'Unnamed';
         document.getElementById('banner-cust-id').textContent = cust.dc_id;
-        document.getElementById('banner-cust-meta').textContent = `Joined: ${cust.created_at ? new Date(cust.created_at).toLocaleDateString() : 'N/A'} • Status: ${cust.is_exempt ? 'Exempt (0%)' : 'Standard Rate'}`;
+        const isExcluded = Number(cust.is_inactive_excluded) === 1;
+        const statusText = isExcluded
+          ? '🚫 Excluded (No invoice in last 12 months)'
+          : (cust.is_exempt ? 'Exempt (0%)' : 'Standard Rate');
+        const invInfo = cust.last_invoice_date ? `Last Invoiced: ${new Date(cust.last_invoice_date).toLocaleDateString()}` : 'Never Invoiced';
+        document.getElementById('banner-cust-meta').textContent = `${invInfo} • Status: ${statusText}`;
         banner.classList.remove('hidden');
       } else {
         banner.classList.add('hidden');
