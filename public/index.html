@@ -204,12 +204,6 @@
         <!-- Carrier Filter -->
         <select id="cust-carrier-filter" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500" onchange="loadRatesPreview()">
           <option value="all">All Carriers</option>
-          <option value="DPD">DPD</option>
-          <option value="YODC2C">Yodel</option>
-          <option value="RM">Royal Mail</option>
-          <option value="EvRi">EvRi</option>
-          <option value="DHL">DHL</option>
-          <option value="UPS">UPS</option>
         </select>
       </div>
 
@@ -494,7 +488,8 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         return { name: 'EvRi', logo: '/logos/evri.png', bg: 'bg-white' };
       }
       if (n.includes('dhl') || c.includes('dhl')) {
-        return { name: 'DHL Ecommerce', logo: '/logos/dhl.svg', bg: 'bg-[#FFCC00]' };
+        const displayName = n.includes('c2c') ? 'DHL Ecom C2C' : 'DHL Ecommerce';
+        return { name: displayName, logo: '/logos/dhl.svg', bg: 'bg-[#FFCC00]' };
       }
       if (n.includes('ups') || c.includes('ups')) {
         return { name: 'UPS', logo: '/logos/ups.svg', bg: 'bg-white' };
@@ -502,7 +497,33 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       if (n.includes('inpost') || c.includes('inpost')) {
         return { name: 'InPost', logo: '/logos/inpost.svg', bg: 'bg-[#FFCC00]' };
       }
+      if (n.includes('pro carrier') || c === 'pc') {
+        return { name: 'Pro Carrier', logo: null, bg: 'bg-[#B48B47]' };
+      }
+      if (n.includes('agl') || c === 'agl') {
+        return { name: 'AGL', logo: null, bg: 'bg-blue-700' };
+      }
+      if (n.includes('ppi') || c === 'ppi') {
+        return { name: 'PPI', logo: null, bg: 'bg-emerald-800' };
+      }
+      if (n.includes('api test') || c.includes('api test')) {
+        return { name: 'API TEST', logo: null, bg: 'bg-gray-700' };
+      }
       return { name: name || code, logo: null, bg: 'bg-gray-800' };
+    }
+
+    function populateCarrierFilterDropdown(rules) {
+      const select = document.getElementById('cust-carrier-filter');
+      if (!select) return;
+      const currentVal = select.value || 'all';
+      select.innerHTML = `<option value="all">All Carriers (${rules.length})</option>`;
+      rules.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.carrier_code || r.carrier_name;
+        opt.textContent = r.carrier_name;
+        if (opt.value === currentVal) opt.selected = true;
+        select.appendChild(opt);
+      });
     }
 
     async function loadRules() {
@@ -510,9 +531,13 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         const res = await fetch('/api/rules');
         const data = await res.json();
         rulesData = data.rules;
-        document.getElementById('cutoff-date-input').value = data.cutoffDate || '2026-09-01';
+        populateCarrierFilterDropdown(rulesData);
+        if (document.getElementById('cutoff-date-input')) {
+          document.getElementById('cutoff-date-input').value = data.cutoffDate || '2026-09-01';
+        }
 
         const container = document.getElementById('carrier-rules-container');
+        if (!container) return;
         container.innerHTML = '';
         rulesData.forEach(r => {
           const info = getCarrierInfo(r.carrier_name, r.carrier_code);
@@ -523,11 +548,14 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
               <div class="w-20 h-11 ${info.bg} rounded-lg flex items-center justify-center p-2 shadow-sm border border-gray-700/60 overflow-hidden flex-shrink-0">
                 ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-full max-w-full object-contain" />` : `<span class="font-bold text-xs text-white">${info.name}</span>`}
               </div>
-              <div class="font-semibold text-sm text-white">${info.name}</div>
+              <div>
+                <div class="font-semibold text-sm text-white">${info.name}</div>
+                <div class="text-[11px] text-gray-500 font-mono">${r.carrier_code || ''}</div>
+              </div>
             </div>
             <div class="flex items-center gap-3">
-              <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent}" class="w-36 accent-blue-500" id="slider-${r.carrier_name}" oninput="document.getElementById('val-${r.carrier_name}').innerText = this.value + '%'">
-              <div class="w-16 text-right font-mono font-bold text-sm text-blue-400" id="val-${r.carrier_name}">${r.increase_percent}%</div>
+              <input type="range" min="0" max="15" step="0.1" value="${r.increase_percent}" class="w-36 accent-blue-500" id="slider-${r.id}" oninput="document.getElementById('val-${r.id}').innerText = this.value + '%'">
+              <div class="w-16 text-right font-mono font-bold text-sm text-blue-400" id="val-${r.id}">${r.increase_percent}%</div>
             </div>
           `;
           container.appendChild(div);
@@ -538,12 +566,15 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
     }
 
     async function saveRules() {
-      const updatedRules = rulesData.map(r => ({
-        carrier_name: r.carrier_name,
-        increase_percent: parseFloat(document.getElementById('slider-' + r.carrier_name).value),
-        active: 1
-      }));
-      const cutoff = document.getElementById('cutoff-date-input').value;
+      const updatedRules = rulesData.map(r => {
+        const slider = document.getElementById('slider-' + r.id);
+        return {
+          carrier_name: r.carrier_name,
+          increase_percent: slider ? parseFloat(slider.value) : r.increase_percent,
+          active: 1
+        };
+      });
+      const cutoff = document.getElementById('cutoff-date-input')?.value;
 
       await fetch('/api/rules', {
         method: 'POST',

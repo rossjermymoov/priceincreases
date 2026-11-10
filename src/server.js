@@ -150,10 +150,52 @@ app.post('/api/customers/:dcId/exempt', async (req, res) => {
   }
 });
 
+// Couriers List
+app.get('/api/couriers', async (req, res) => {
+  try {
+    const list = await db.query('SELECT * FROM couriers ORDER BY name ASC');
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 4. Rules
 app.get('/api/rules', async (req, res) => {
   try {
-    const rules = await db.query('SELECT * FROM pricing_rules ORDER BY carrier_name ASC');
+    // Ensure all couriers in DB have a pricing rule
+    const couriers = await db.query('SELECT * FROM couriers');
+    let rules = await db.query('SELECT * FROM pricing_rules');
+    const existingCodes = new Set(rules.map(r => r.carrier_code || r.carrier_name));
+
+    const defaultPcts = {
+      'DPD': 3.9,
+      'YODC2C': 2.0,
+      'RM': 3.5,
+      'EvRi': 2.5,
+      'DHL': 4.0,
+      'DHLC2C': 4.0,
+      'UPS': 3.0,
+      'INPOST': 3.0,
+      'PC': 3.5,
+      'AGL': 3.0,
+      'PPI': 3.0,
+      'API TEST': 0.0
+    };
+
+    let addedNew = false;
+    for (const c of couriers) {
+      if (!existingCodes.has(c.code) && !existingCodes.has(c.name)) {
+        const pct = defaultPcts[c.code] !== undefined ? defaultPcts[c.code] : 3.0;
+        await db.query('INSERT INTO pricing_rules (carrier_name, carrier_code, increase_percent) VALUES (?, ?, ?)', [c.name, c.code, pct]);
+        addedNew = true;
+      }
+    }
+    if (addedNew) {
+      rules = await db.query('SELECT * FROM pricing_rules');
+    }
+    rules.sort((a, b) => (a.carrier_name || '').localeCompare(b.carrier_name || ''));
+
     const cutoff = await db.query("SELECT value FROM campaign_settings WHERE key = 'cutoff_date'");
     res.json({
       rules,
@@ -421,9 +463,18 @@ async function auditCustomerInvoices(customers) {
 async function ensureRatesForCustomers(customers) {
   const sampleServices = [
     { service_id: 764, name: 'DPD Next Day', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 545, sub: 100 },
-    { service_id: 2777, name: 'Yodel Tracked', courier: 'YODC2C', zone_id: 20809, zone_name: 'Mainland', weight_id: 33799, weight_name: '0-15kg', price: 395, sub: 80 },
+    { service_id: 1644, name: 'Yodel C2C', courier: 'YODC2C', zone_id: 20809, zone_name: 'Mainland', weight_id: 33799, weight_name: '0-15kg', price: 395, sub: 80 },
     { service_id: 769, name: 'DPD Classic', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 620, sub: 120 },
-    { service_id: 886, name: 'Royal Mail Tracked 48', courier: 'RM', zone_id: 9527, zone_name: 'UK National', weight_id: 17516, weight_name: '0-2kg', price: 290, sub: 50 }
+    { service_id: 2315, name: 'Royal Mail 24 Large Letter', courier: 'RM', zone_id: 9527, zone_name: 'UK National', weight_id: 17516, weight_name: '0-2kg', price: 290, sub: 50 },
+    { service_id: 1381, name: 'Evri 24 Non POD Parcel', courier: 'EvRi', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-15kg', price: 310, sub: 60 },
+    { service_id: 1362, name: 'DHL Ecommerce Parcel', courier: 'DHL', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-25kg', price: 480, sub: 90 },
+    { service_id: 1650, name: 'DHL Bagit 1Kg C2C', courier: 'DHLC2C', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-1kg', price: 340, sub: 70 },
+    { service_id: 1537, name: 'UPS Standard UK', courier: 'UPS', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 650, sub: 130 },
+    { service_id: 3542, name: 'InPost 2Door Small', courier: 'INPOST', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: 'Small Locker', price: 280, sub: 45 },
+    { service_id: 1264, name: 'Pro Carrier Tracked 48', courier: 'PC', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-2kg', price: 295, sub: 50 },
+    { service_id: 2753, name: 'AGL Yodel Xpect 24', courier: 'AGL', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-10kg', price: 360, sub: 65 },
+    { service_id: 1353, name: 'PPI Label', courier: 'PPI', zone_id: 9527, zone_name: 'UK National', weight_id: 17516, weight_name: 'Standard', price: 220, sub: 40 },
+    { service_id: 2776, name: 'API Test Service 2', courier: 'API TEST', zone_id: 9527, zone_name: 'Test Zone', weight_id: 17516, weight_name: '0-5kg', price: 250, sub: 50 }
   ];
 
   for (const c of customers) {

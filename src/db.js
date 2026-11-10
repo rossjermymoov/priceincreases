@@ -325,11 +325,17 @@ async function initDb() {
   if (Number(count) === 0) {
     const defaults = [
       ['DPD', 'DPD', 3.9],
-      ['Yodel', 'YODC2C', 2.0],
+      ['Yodel C2C', 'YODC2C', 2.0],
       ['Royal Mail', 'RM', 3.5],
       ['EvRi', 'EvRi', 2.5],
       ['DHL Ecommerce', 'DHL', 4.0],
-      ['UPS', 'UPS', 3.0]
+      ['DHL Ecom C2C', 'DHLC2C', 4.0],
+      ['UPS', 'UPS', 3.0],
+      ['InPost', 'INPOST', 3.0],
+      ['Pro Carrier', 'PC', 3.5],
+      ['AGL', 'AGL', 3.0],
+      ['PPI', 'PPI', 3.0],
+      ['API TEST', 'API TEST', 0.0]
     ];
     for (const [name, code, pct] of defaults) {
       await query('INSERT INTO pricing_rules (carrier_name, carrier_code, increase_percent) VALUES (?, ?, ?)', [name, code, pct]);
