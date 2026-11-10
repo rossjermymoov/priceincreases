@@ -163,25 +163,53 @@
 
   <!-- TAB 2: CUSTOMER PRICE MATRIX & DIFF -->
   <div id="tab-matrix" class="hidden space-y-4">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
-      <div class="flex items-center gap-3">
-        <input type="text" id="cust-search" placeholder="Search customer name or DC-ID..." class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white w-64 focus:outline-none focus:border-blue-500" onkeyup="filterTable()">
-        <select id="cust-carrier-filter" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500" onchange="filterTable()">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4">
+      <div class="flex flex-wrap items-center gap-3 flex-1">
+        <!-- Customer Dropdown Selector -->
+        <div class="flex items-center gap-2 flex-1 min-w-[260px] max-w-[360px]">
+          <label for="cust-select-filter" class="text-xs text-gray-400 whitespace-nowrap font-medium">Customer:</label>
+          <select id="cust-select-filter" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500 font-medium" onchange="onCustomerSelectChanged()">
+            <option value="all">👥 All Customers (Loading...)</option>
+          </select>
+        </div>
+
+        <!-- Search Customer Box -->
+        <div class="relative min-w-[220px]">
+          <input type="text" id="cust-search" placeholder="Search customer (e.g. Sherwood)..." class="bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white w-full focus:outline-none focus:border-blue-500" oninput="onSearchInputChanged()">
+          <span class="absolute left-2.5 top-1.5 text-gray-500 text-xs">🔍</span>
+        </div>
+
+        <!-- Carrier Filter -->
+        <select id="cust-carrier-filter" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500" onchange="loadRatesPreview()">
           <option value="all">All Carriers</option>
-          <option value="DPD">DPD Only</option>
-          <option value="YODC2C">Yodel Only</option>
-          <option value="RM">Royal Mail Only</option>
+          <option value="DPD">DPD</option>
+          <option value="YODC2C">Yodel</option>
+          <option value="RM">Royal Mail</option>
+          <option value="EvRi">EvRi</option>
+          <option value="DHL">DHL</option>
+          <option value="UPS">UPS</option>
         </select>
       </div>
 
       <div class="flex items-center gap-2">
-        <button onclick="loadRatesPreview()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition">
-          Re-calculate Rates
+        <button onclick="loadRatesPreview()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5">
+          <span>🔄</span> Re-calculate Rates
         </button>
         <a href="/api/export-csv" download class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-gray-700 flex items-center gap-1">
           <span>📥</span> Export Diff CSV
         </a>
       </div>
+    </div>
+
+    <!-- Active Customer Info Banner -->
+    <div id="cust-active-banner" class="hidden px-4 py-2.5 bg-blue-950/40 border border-blue-800/50 rounded-xl text-xs flex items-center justify-between text-blue-200">
+      <div class="flex items-center gap-2">
+        <span class="text-sm">🏢</span>
+        <span id="banner-cust-name" class="font-semibold text-white"></span>
+        <span id="banner-cust-id" class="badge bg-blue-500/20 text-blue-300 font-mono"></span>
+        <span id="banner-cust-meta" class="text-gray-400 ml-2"></span>
+      </div>
+      <button onclick="resetCustomerFilter()" class="text-blue-400 hover:text-white underline text-xs font-medium">Show All Customers</button>
     </div>
 
     <!-- Table -->
@@ -360,10 +388,12 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
 
   <script>
     let rulesData = [];
+    let allCustomersList = [];
 
     async function init() {
       await loadStatus();
       await loadRules();
+      await loadCustomers();
       await loadRatesPreview();
       await loadAuditLogs();
     }
@@ -458,11 +488,119 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
       await loadRatesPreview();
     }
 
+    async function loadCustomers() {
+      try {
+        const res = await fetch('/api/customers');
+        const data = await res.json();
+        allCustomersList = data || [];
+        populateCustomerDropdown(allCustomersList);
+      } catch (e) {
+        console.error('Failed to load customers:', e);
+      }
+    }
+
+    function populateCustomerDropdown(list, selectedValue = 'all') {
+      const select = document.getElementById('cust-select-filter');
+      if (!select) return;
+
+      const currentVal = selectedValue || select.value || 'all';
+      select.innerHTML = '';
+
+      const allOpt = document.createElement('option');
+      allOpt.value = 'all';
+      allOpt.textContent = `👥 All Customers (${allCustomersList.length})`;
+      select.appendChild(allOpt);
+
+      list.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.dc_id;
+        opt.textContent = `${c.name || 'Unnamed'} (${c.dc_id})`;
+        if (c.dc_id === currentVal) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      if (currentVal === 'all') {
+        allOpt.selected = true;
+      }
+    }
+
+    function onCustomerSelectChanged() {
+      const select = document.getElementById('cust-select-filter');
+      const selectedDcId = select.value;
+      updateActiveCustomerBanner(selectedDcId);
+      loadRatesPreview();
+    }
+
+    function updateActiveCustomerBanner(dcId) {
+      const banner = document.getElementById('cust-active-banner');
+      if (!banner) return;
+
+      if (!dcId || dcId === 'all') {
+        banner.classList.add('hidden');
+        return;
+      }
+
+      const cust = allCustomersList.find(c => c.dc_id === dcId);
+      if (cust) {
+        document.getElementById('banner-cust-name').textContent = cust.name || 'Unnamed';
+        document.getElementById('banner-cust-id').textContent = cust.dc_id;
+        document.getElementById('banner-cust-meta').textContent = `Joined: ${cust.created_at ? new Date(cust.created_at).toLocaleDateString() : 'N/A'} • Status: ${cust.is_exempt ? 'Exempt (0%)' : 'Standard Rate'}`;
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+    }
+
+    function resetCustomerFilter() {
+      const select = document.getElementById('cust-select-filter');
+      if (select) select.value = 'all';
+      const search = document.getElementById('cust-search');
+      if (search) search.value = '';
+      populateCustomerDropdown(allCustomersList, 'all');
+      updateActiveCustomerBanner('all');
+      loadRatesPreview();
+    }
+
+    let searchDebounceTimer = null;
+    function onSearchInputChanged() {
+      const q = document.getElementById('cust-search').value.trim().toLowerCase();
+
+      // Dynamically filter dropdown options
+      if (!q) {
+        populateCustomerDropdown(allCustomersList, document.getElementById('cust-select-filter').value);
+      } else {
+        const matched = allCustomersList.filter(c =>
+          (c.name && c.name.toLowerCase().includes(q)) ||
+          (c.dc_id && c.dc_id.toLowerCase().includes(q))
+        );
+        populateCustomerDropdown(matched, matched.length === 1 ? matched[0].dc_id : 'all');
+        if (matched.length === 1) {
+          document.getElementById('cust-select-filter').value = matched[0].dc_id;
+          updateActiveCustomerBanner(matched[0].dc_id);
+        }
+      }
+
+      // Debounce server call for responsive real-time search
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        loadRatesPreview();
+      }, 250);
+    }
+
     async function loadRatesPreview() {
       const tbody = document.getElementById('table-body');
       tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-500">Calculating differential rate cards...</td></tr>';
       try {
-        const res = await fetch('/api/rates/preview');
+        const customerDcId = document.getElementById('cust-select-filter')?.value || 'all';
+        const carrier = document.getElementById('cust-carrier-filter')?.value || 'all';
+        const search = document.getElementById('cust-search')?.value.trim() || '';
+
+        const params = new URLSearchParams();
+        if (customerDcId && customerDcId !== 'all') params.set('customer_dc_id', customerDcId);
+        if (carrier && carrier !== 'all') params.set('carrier', carrier);
+        if (search) params.set('search', search);
+
+        const res = await fetch('/api/rates/preview?' + params.toString());
         const data = await res.json();
 
         document.getElementById('stat-diff').innerText = '+£' + Number(data.summary.totalDifference).toLocaleString();
@@ -471,8 +609,8 @@ SCHEDULE_DATE=2027-01-01T00:01:00Z</pre>
         document.getElementById('stat-exempt').innerText = data.summary.exemptRates + ' Exempt (0%)';
 
         tbody.innerHTML = '';
-        if (data.rates.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-400">No rates staged. Click "Sync From Billing API" to import live rates!</td></tr>';
+        if (!data.rates || data.rates.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-400">No matching rates found. Try selecting another customer or clearing the search.</td></tr>';
           return;
         }
 

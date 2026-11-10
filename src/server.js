@@ -74,29 +74,8 @@ app.post('/api/sync', async (req, res) => {
       await db.query(sSql, [s.id, s.client_courier_id, s.name, s.code]);
     }
 
-    // Populate baseline rates for customers if empty
-    const existingRates = await db.query('SELECT count(*) as count FROM customer_rates');
-    if (Number(existingRates[0]?.count || 0) === 0) {
-      console.log('[Sync] Seeding baseline sample rate cards for active customers...');
-      // Sample standard carrier service IDs: DPD Next Day (764), Yodel (2777), Royal Mail (765)
-      const sampleServices = [
-        { service_id: 764, name: 'DPD Next Day', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 545, sub: 100 },
-        { service_id: 2777, name: 'Yodel Tracked', courier: 'YODC2C', zone_id: 20809, zone_name: 'Mainland', weight_id: 33799, weight_name: '0-15kg', price: 395, sub: 80 },
-        { service_id: 769, name: 'DPD Classic', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 620, sub: 120 },
-        { service_id: 886, name: 'Royal Mail Tracked 48', courier: 'RM', zone_id: 9527, zone_name: 'UK National', weight_id: 17516, weight_name: '0-2kg', price: 290, sub: 50 }
-      ];
-
-      const activeCusts = customers.slice(0, 80); // Seed first 80 for quick demonstration
-      for (const c of activeCusts) {
-        if (!c.dc_id) continue;
-        for (const s of sampleServices) {
-          const rSql = db.dbDriver === 'postgres'
-            ? 'INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING'
-            : 'INSERT OR IGNORE INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-          await db.query(rSql, [c.dc_id, s.courier, s.service_id, s.name, s.zone_id, s.zone_name, s.weight_id, s.weight_name, s.price, s.sub]);
-        }
-      }
-    }
+    // Populate baseline rates for all customers
+    await ensureRatesForCustomers(customers);
 
     res.json({
       success: true,
@@ -113,7 +92,8 @@ app.post('/api/sync', async (req, res) => {
 // 3. Customers List
 app.get('/api/customers', async (req, res) => {
   try {
-    const list = await db.query('SELECT * FROM customers ORDER BY created_at DESC');
+    const list = await db.query('SELECT * FROM customers');
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     res.json(list);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -174,7 +154,23 @@ app.post('/api/rules', async (req, res) => {
 // 5. Rates Preview & Diff Calculation
 app.get('/api/rates/preview', async (req, res) => {
   try {
-    const rates = await scheduler.calculateCustomerRates();
+    const customerDcId = req.query.customer_dc_id && req.query.customer_dc_id !== 'all' ? req.query.customer_dc_id : null;
+    const carrier = req.query.carrier && req.query.carrier !== 'all' ? req.query.carrier : null;
+    const search = (req.query.search || '').trim().toLowerCase();
+
+    let rates = await scheduler.calculateCustomerRates(customerDcId);
+
+    if (carrier) {
+      rates = rates.filter(r => r.courier_code === carrier || (r.service_name && r.service_name.toLowerCase().includes(carrier.toLowerCase())));
+    }
+
+    if (search) {
+      rates = rates.filter(r =>
+        (r.customer_name && r.customer_name.toLowerCase().includes(search)) ||
+        (r.customer_dc_id && r.customer_dc_id.toLowerCase().includes(search)) ||
+        (r.service_name && r.service_name.toLowerCase().includes(search))
+      );
+    }
 
     let totalOldPence = 0;
     let totalNewPence = 0;
@@ -191,6 +187,10 @@ app.get('/api/rates/preview', async (req, res) => {
     const totalDiffPence = totalNewPence - totalOldPence;
     const avgPct = totalOldPence > 0 ? ((totalDiffPence / totalOldPence) * 100).toFixed(2) : '0.00';
 
+    // If viewing a specific customer or search filter, return all matching rates.
+    // If viewing all customers, return the first 500 rows for high UI responsiveness.
+    const returnedRates = (customerDcId || search) ? rates : rates.slice(0, 500);
+
     res.json({
       summary: {
         totalCustomers: uniqueCustomers.size,
@@ -201,7 +201,9 @@ app.get('/api/rates/preview', async (req, res) => {
         totalDifference: (totalDiffPence / 100).toFixed(2),
         averageIncreasePercent: avgPct
       },
-      rates: rates.slice(0, 200) // Return first 200 for fast UI display
+      rates: returnedRates,
+      totalCount: rates.length,
+      returnedCount: returnedRates.length
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -321,10 +323,40 @@ app.get('/api/export-csv', async (req, res) => {
   }
 });
 
+async function ensureRatesForCustomers(customers) {
+  const sampleServices = [
+    { service_id: 764, name: 'DPD Next Day', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 545, sub: 100 },
+    { service_id: 2777, name: 'Yodel Tracked', courier: 'YODC2C', zone_id: 20809, zone_name: 'Mainland', weight_id: 33799, weight_name: '0-15kg', price: 395, sub: 80 },
+    { service_id: 769, name: 'DPD Classic', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: '0-30kg', price: 620, sub: 120 },
+    { service_id: 886, name: 'Royal Mail Tracked 48', courier: 'RM', zone_id: 9527, zone_name: 'UK National', weight_id: 17516, weight_name: '0-2kg', price: 290, sub: 50 }
+  ];
+
+  for (const c of customers) {
+    if (!c.dc_id) continue;
+    for (const s of sampleServices) {
+      const rSql = db.dbDriver === 'postgres'
+        ? 'INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING'
+        : 'INSERT OR IGNORE INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+      await db.query(rSql, [c.dc_id, s.courier, s.service_id, s.name, s.zone_id, s.zone_name, s.weight_id, s.weight_name, s.price, s.sub]);
+    }
+  }
+}
+
 // Start Server
 async function start() {
   await db.initDb();
   scheduler.init();
+
+  try {
+    const custs = await db.query('SELECT * FROM customers');
+    if (custs.length > 0) {
+      await ensureRatesForCustomers(custs);
+      console.log(`[RateShift] Rate cards verified/seeded across all ${custs.length} customers.`);
+    }
+  } catch (e) {
+    console.warn('[RateShift] Initial rate verification warning:', e.message);
+  }
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[RateShift] Server running on http://0.0.0.0:${PORT}`);
   });
