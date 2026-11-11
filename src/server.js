@@ -217,14 +217,26 @@ app.post('/api/customers/:dcId/rates', async (req, res) => {
 // Customer Exclusion Statistics
 app.get('/api/customers/stats', async (req, res) => {
   try {
+    const cutoffRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'cutoff_date'");
+    const cutoffDate = cutoffRow[0]?.value || '2026-09-01';
+    const cutoffTimestamp = new Date(cutoffDate).getTime();
+
     const list = await db.query('SELECT * FROM customers');
     const active = list.filter(c => !c.is_inactive_excluded || c.is_inactive_excluded === 0);
     const dormant = list.filter(c => c.is_inactive_excluded === 1);
-    const exempt = active.filter(c => Number(c.is_exempt) === 1);
-    const custom = active.filter(c => !c.is_exempt && c.custom_increase_pct !== null && c.custom_increase_pct !== undefined);
-    const standard = active.filter(c => !c.is_exempt && (c.custom_increase_pct === null || c.custom_increase_pct === undefined));
+
+    const isCutoffExempt = (c) => {
+      const isTest = (c.dc_id || '').toLowerCase().includes('test') || (c.name || '').toLowerCase().includes('test');
+      return !isTest && c.created_at && new Date(c.created_at).getTime() > cutoffTimestamp;
+    };
+
+    const introExempt = active.filter(c => isCutoffExempt(c));
+    const manualExempt = active.filter(c => Number(c.is_exempt) === 1);
+    const allExempt = active.filter(c => Number(c.is_exempt) === 1 || isCutoffExempt(c));
+    const custom = active.filter(c => !isCutoffExempt(c) && !c.is_exempt && c.custom_increase_pct !== null && c.custom_increase_pct !== undefined);
+    const standard = active.filter(c => !isCutoffExempt(c) && !c.is_exempt && (c.custom_increase_pct === null || c.custom_increase_pct === undefined));
     const pushed = active.filter(c => c.last_pushed_at && c.last_pushed_status === 'success');
-    const pending = active.filter(c => !c.is_exempt && !c.last_pushed_at);
+    const pending = active.filter(c => !isCutoffExempt(c) && !c.is_exempt && !c.last_pushed_at);
     const newCustomers = active.filter(c => Number(c.is_new_customer) === 1);
 
     res.json({
@@ -232,11 +244,14 @@ app.get('/api/customers/stats', async (req, res) => {
       active: active.length,
       dormant: dormant.length,
       standard: standard.length,
-      exempt: exempt.length,
+      exempt: allExempt.length,
+      manualExempt: manualExempt.length,
+      introExempt: introExempt.length,
       custom: custom.length,
       pushed: pushed.length,
       pending: pending.length,
-      newCustomers: newCustomers.length
+      newCustomers: newCustomers.length,
+      cutoffDate
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
