@@ -277,17 +277,17 @@ app.get('/api/rules', async (req, res) => {
     const existingCodes = new Set(rules.map(r => r.carrier_code || r.carrier_name));
 
     const defaultPcts = {
-      'DPD': 3.9,
-      'YODC2C': 2.0,
+      'DPD': 3.5,
+      'YODC2C': 3.5,
       'RM': 3.5,
-      'EvRi': 2.5,
-      'DHL': 4.0,
-      'DHLC2C': 4.0,
-      'UPS': 3.0,
-      'INPOST': 3.0,
+      'EvRi': 3.5,
+      'DHL': 3.5,
+      'DHLC2C': 3.5,
+      'UPS': 3.5,
+      'INPOST': 3.5,
       'PC': 3.5,
-      'AGL': 3.0,
-      'PPI': 3.0,
+      'AGL': 3.5,
+      'PPI': 3.5,
       'API TEST': 0.0
     };
 
@@ -326,7 +326,7 @@ app.post('/api/rules', async (req, res) => {
           Number(r.increase_percent || 0),
           Math.round(Number(r.fixed_markup_pence || 0)),
           r.active ? 1 : 0,
-          r.carrier_name
+          r.carrier_name || r.carrier_code
         ]);
       }
     }
@@ -337,6 +337,41 @@ app.post('/api/rules', async (req, res) => {
       await db.query(upsertSql, ['cutoff_date', cutoffDate]);
     }
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update a single courier percentage rule (instant sync from Tab 1 or Tab 3)
+app.post('/api/rules/carrier', async (req, res) => {
+  try {
+    const { carrier_code, carrier_name, increase_percent } = req.body;
+    const identifier = carrier_code || carrier_name;
+    const pct = parseFloat(increase_percent) || 0;
+    const sql = db.dbDriver === 'postgres'
+      ? 'UPDATE pricing_rules SET increase_percent = $1, fixed_markup_pence = $2, active = $3 WHERE carrier_code = $4'
+      : 'UPDATE pricing_rules SET increase_percent = ?, fixed_markup_pence = ?, active = ? WHERE carrier_code = ?';
+    await db.query(sql, [pct, 0, 1, identifier]);
+    res.json({ success: true, carrier: identifier, increase_percent: pct });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Apply uniform percentage markup to all couriers instantly
+app.post('/api/rules/uniform', async (req, res) => {
+  try {
+    const pct = parseFloat(req.body.increase_percent) || 0;
+    const rules = await db.query('SELECT * FROM pricing_rules');
+    for (const r of rules) {
+      if (r.carrier_code === 'API TEST') continue;
+      const identifier = r.carrier_code || r.carrier_name;
+      const sql = db.dbDriver === 'postgres'
+        ? 'UPDATE pricing_rules SET increase_percent = $1, fixed_markup_pence = $2, active = $3 WHERE carrier_code = $4'
+        : 'UPDATE pricing_rules SET increase_percent = ?, fixed_markup_pence = ?, active = ? WHERE carrier_code = ?';
+      await db.query(sql, [pct, 0, 1, identifier]);
+    }
+    res.json({ success: true, increase_percent: pct });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

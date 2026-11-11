@@ -218,23 +218,24 @@ async function query(sql, params = []) {
   }
 
   if (lower.startsWith('update pricing_rules')) {
-    if (params.length === 4) {
-      const [increase_percent, fixed_markup_pence, active, carrier_name] = params;
-      const r = store.data.pricing_rules.find(x => x.carrier_name === carrier_name);
-      if (r) {
+    const identifier = params[params.length - 1];
+    const r = store.data.pricing_rules.find(x => x.carrier_name === identifier || x.carrier_code === identifier || x.id === identifier);
+    if (r) {
+      if (params.length >= 4) {
+        const [increase_percent, fixed_markup_pence, active] = params;
         r.increase_percent = Number(increase_percent || 0);
         r.fixed_markup_pence = Number(fixed_markup_pence || 0);
         r.active = active;
-        store.save();
-      }
-    } else {
-      const [increase_percent, active, carrier_name] = params;
-      const r = store.data.pricing_rules.find(x => x.carrier_name === carrier_name);
-      if (r) {
+      } else if (params.length === 3) {
+        const [increase_percent, active] = params;
         r.increase_percent = Number(increase_percent || 0);
         r.active = active;
-        store.save();
+      } else if (params.length === 2) {
+        const [increase_percent] = params;
+        r.increase_percent = Number(increase_percent || 0);
+        r.fixed_markup_pence = 0;
       }
+      store.save();
     }
     return [];
   }
@@ -366,17 +367,17 @@ async function initDb() {
   const count = rules[0]?.count || 0;
   if (Number(count) === 0) {
     const defaults = [
-      ['DPD', 'DPD', 3.9],
-      ['Yodel C2C', 'YODC2C', 2.0],
+      ['DPD', 'DPD', 3.5],
+      ['Yodel C2C', 'YODC2C', 3.5],
       ['Royal Mail', 'RM', 3.5],
-      ['EvRi', 'EvRi', 2.5],
-      ['DHL Ecommerce', 'DHL', 4.0],
-      ['DHL Ecom C2C', 'DHLC2C', 4.0],
-      ['UPS', 'UPS', 3.0],
-      ['InPost', 'INPOST', 3.0],
+      ['EvRi', 'EvRi', 3.5],
+      ['DHL Ecommerce', 'DHL', 3.5],
+      ['DHL Ecom C2C', 'DHLC2C', 3.5],
+      ['UPS', 'UPS', 3.5],
+      ['InPost', 'INPOST', 3.5],
       ['Pro Carrier', 'PC', 3.5],
-      ['AGL', 'AGL', 3.0],
-      ['PPI', 'PPI', 3.0],
+      ['AGL', 'AGL', 3.5],
+      ['PPI', 'PPI', 3.5],
       ['API TEST', 'API TEST', 0.0]
     ];
     for (const [name, code, pct] of defaults) {

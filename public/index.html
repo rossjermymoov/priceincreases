@@ -407,16 +407,24 @@
       <!-- Column 2 & 3: Interactive Rate Card Playground Table -->
       <div class="glass-card p-6 lg:col-span-2 space-y-4 flex flex-col justify-between">
         <div>
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
             <div>
               <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <span>📦</span> Live Calculated Rates Simulation
               </h3>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Edit base prices below to simulate outputs before pushing live to Despatch Cloud.</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Live rates using courier markups configured on Tab 1. Edit base prices or markups below.</p>
             </div>
-            <button onclick="loadSandboxRates()" class="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">
-              🔄 Recalculate
-            </button>
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900/60 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+                <span class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">Uniform %:</span>
+                <input type="number" id="sandbox-quick-pct" min="0" max="30" step="0.1" value="3.5" class="w-14 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-1.5 py-0.5 text-right text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 focus:outline-none focus:border-indigo-500">
+                <span class="text-slate-400 font-mono text-xs">%</span>
+                <button onclick="applyUniformMarkupFromSandbox()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-2.5 py-1 rounded-lg transition shadow-xs">Apply</button>
+              </div>
+              <button onclick="loadSandboxRates()" class="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1">
+                <span>🔄</span> Recalculate
+              </button>
+            </div>
           </div>
 
           <!-- Rate Table -->
@@ -427,7 +435,7 @@
                   <th class="p-2.5">Courier</th>
                   <th class="p-2.5">Service</th>
                   <th class="p-2.5 text-right">Base £</th>
-                  <th class="p-2.5 text-right">% Mark</th>
+                  <th class="p-2.5 text-right">% Markup</th>
                   <th class="p-2.5 text-right">New £</th>
                   <th class="p-2.5 text-right">Diff</th>
                 </tr>
@@ -780,26 +788,80 @@
       num.value = val;
     }
 
-    function applyFixedPercentageToAll() {
+    async function applyFixedPercentageToAll() {
       const val = parseFloat(document.getElementById('quick-fixed-pct')?.value) || 0;
       rulesData.forEach(r => {
         const num = document.getElementById('num-' + r.id);
         if (num) num.value = val;
       });
+      // Synchronize immediately with backend so Tab 3 and all calculations update in real-time
+      try {
+        const res = await fetch('/api/rules/uniform', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ increase_percent: val })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        await loadRules();
+        await loadStatus();
+        if (document.getElementById('sandbox-customer-select')) {
+          await loadSandboxRates();
+        }
+      } catch (err) {
+        console.error('Error auto-applying uniform percentage:', err);
+      }
     }
 
-    function resetRulesToDefaults() {
+    async function applyUniformMarkupFromSandbox() {
+      const val = parseFloat(document.getElementById('sandbox-quick-pct')?.value) || 0;
+      try {
+        const res = await fetch('/api/rules/uniform', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ increase_percent: val })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        // Sync quick input on Tab 1 as well
+        const tab1Quick = document.getElementById('quick-fixed-pct');
+        if (tab1Quick) tab1Quick.value = val;
+        await loadRules();
+        await loadStatus();
+        await loadSandboxRates();
+      } catch (err) {
+        alert('Failed to apply uniform markup: ' + err.message);
+      }
+    }
+
+    async function updateCourierMarkupFromSandbox(courierCode, newPct) {
+      const pct = parseFloat(newPct) || 0;
+      try {
+        const res = await fetch('/api/rules/carrier', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ carrier_code: courierCode, increase_percent: pct })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        await loadRules();
+        await loadStatus();
+        await loadSandboxRates();
+      } catch (err) {
+        alert('Failed to update courier markup: ' + err.message);
+      }
+    }
+
+    async function resetRulesToDefaults() {
       const defaultPcts = {
-        'DPD': 3.9, 'YODC2C': 2.0, 'RM': 3.5, 'EvRi': 2.5, 'DHL': 4.0, 'DHLC2C': 4.0,
-        'UPS': 3.0, 'INPOST': 3.0, 'PC': 3.5, 'AGL': 3.0, 'PPI': 3.0, 'API TEST': 0.0
+        'DPD': 3.5, 'YODC2C': 3.5, 'RM': 3.5, 'EvRi': 3.5, 'DHL': 3.5, 'DHLC2C': 3.5,
+        'UPS': 3.5, 'INPOST': 3.5, 'PC': 3.5, 'AGL': 3.5, 'PPI': 3.5, 'API TEST': 0.0
       };
       rulesData.forEach(r => {
-        const defPct = defaultPcts[r.carrier_code] !== undefined ? defaultPcts[r.carrier_code] : 3.0;
+        const defPct = defaultPcts[r.carrier_code] !== undefined ? defaultPcts[r.carrier_code] : 3.5;
         const num = document.getElementById('num-' + r.id);
         const active = document.getElementById('active-' + r.id);
         if (num) num.value = defPct;
         if (active) active.checked = true;
       });
+      await saveRules();
     }
 
     async function saveRules() {
@@ -824,7 +886,14 @@
           body: JSON.stringify({ rules: updatedRules, cutoffDate: cutoff })
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        alert('✓ Courier base percentage increases saved successfully!');
+        await loadStatus();
+        if (document.getElementById('sandbox-customer-select')) {
+          await loadSandboxRates();
+        }
+      } catch (err) {
+        alert('Failed to save rules: ' + err.message);
+      }
+    }
         await loadStatus();
         if (document.getElementById('sandbox-customer-select')) {
           await loadSandboxRates();
@@ -1100,9 +1169,18 @@
           return;
         }
 
-        tbody.innerHTML = rates.map(r => `
+        tbody.innerHTML = rates.map(r => {
+          const info = getCarrierInfo(null, r.courier_code);
+          return `
           <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
-            <td class="p-3 font-semibold text-slate-900 dark:text-white font-sans">${r.courier_code} — ${r.service_name}</td>
+            <td class="p-3 font-semibold text-slate-900 dark:text-white font-sans">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-6 flex-shrink-0 flex items-center justify-center p-0.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-2xs">
+                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-4 max-w-full object-contain">` : `<span class="text-[9px] font-bold text-slate-500 font-mono">${info.name}</span>`}
+                </div>
+                <span>${r.service_name}</span>
+              </div>
+            </td>
             <td class="p-3 text-slate-500 dark:text-slate-400 font-sans">${r.zone_name} (${r.weight_band})</td>
             <td class="p-3 text-right text-slate-600 dark:text-slate-300">£${(r.old_price / 100).toFixed(2)}</td>
             <td class="p-3 text-right ${r.applied_percent > 0 ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-slate-400'}">+${r.applied_percent}%</td>
@@ -1112,7 +1190,8 @@
               ${r.is_exempt ? `<span class="badge bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-sans">0% (Exempt)</span>` : `<span class="badge bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-sans">Active Increase</span>`}
             </td>
           </tr>
-        `).join('');
+        `;
+        }).join('');
 
         document.getElementById('modal-summary-text').innerText = `Total Rates: ${rates.length} | Old Total: £${data.summary?.totalOldCost} | New Total: £${data.summary?.totalNewCost} (+£${data.summary?.totalDifference})`;
       } catch (e) {
@@ -1242,8 +1321,13 @@
           const diffGbp = (r.diff_pence / 100).toFixed(2);
 
           tr.innerHTML = `
-            <td class="p-2.5 font-bold text-slate-900 dark:text-white">
-              <span class="inline-block px-2 py-0.5 rounded-lg text-[10px] ${info.bg} ${info.text} font-bold shadow-sm">${info.name}</span>
+            <td class="p-2.5">
+              <div class="flex items-center gap-2.5">
+                <div class="w-10 h-7 flex-shrink-0 flex items-center justify-center p-1 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs">
+                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-5 max-w-full object-contain">` : `<span class="text-[9px] font-bold text-slate-500 font-mono">${info.name}</span>`}
+                </div>
+                <span class="font-bold text-xs text-slate-900 dark:text-white whitespace-nowrap">${info.name}</span>
+              </div>
             </td>
             <td class="p-2.5 text-slate-700 dark:text-slate-300 font-sans font-medium">${r.service_name}</td>
             <td class="p-2.5 text-right text-slate-700 dark:text-slate-300 font-mono">
@@ -1254,7 +1338,16 @@
                        onchange="updateSandboxRatePrice('${r.customer_dc_id}', ${r.service_id}, ${r.zone_id}, ${r.weight_class_id}, this.value, '${r.courier_code}')">
               </div>
             </td>
-            <td class="p-2.5 text-right ${r.applied_percent > 0 ? 'text-indigo-600 dark:text-indigo-400 font-extrabold' : 'text-slate-400'}">+${r.applied_percent.toFixed(1)}%</td>
+            <td class="p-2.5 text-right font-mono">
+              <div class="flex items-center justify-end gap-1">
+                <span class="text-indigo-600 dark:text-indigo-400 font-bold text-xs">+</span>
+                <input type="number" step="0.1" min="0" max="50" value="${r.applied_percent.toFixed(1)}" 
+                       class="w-14 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-1.5 py-0.5 text-right font-mono text-indigo-600 dark:text-indigo-400 text-xs font-extrabold focus:outline-none focus:border-indigo-500 shadow-sm"
+                       onchange="updateCourierMarkupFromSandbox('${r.courier_code}', this.value)"
+                       title="Edit markup for ${info.name}">
+                <span class="text-slate-400 font-mono text-xs">%</span>
+              </div>
+            </td>
             <td class="p-2.5 text-right font-extrabold text-slate-900 dark:text-white">£${newGbp}</td>
             <td class="p-2.5 text-right text-emerald-600 dark:text-emerald-400 font-bold">+£${diffGbp}</td>
           `;

@@ -84109,86 +84109,97 @@
       "id": 1,
       "carrier_name": "DPD",
       "carrier_code": "DPD",
-      "increase_percent": 5,
+      "increase_percent": 3.5,
       "active": 1,
-      "fixed_markup_pence": 20
+      "fixed_markup_pence": 0
     },
     {
       "id": 2,
       "carrier_name": "Yodel C2C",
       "carrier_code": "YODC2C",
-      "increase_percent": 2,
-      "active": 1
+      "increase_percent": 3.5,
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 3,
       "carrier_name": "Royal Mail",
       "carrier_code": "RM",
       "increase_percent": 3.5,
-      "active": 1
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 4,
       "carrier_name": "EvRi",
       "carrier_code": "EvRi",
-      "increase_percent": 2.5,
-      "active": 1
+      "increase_percent": 3.5,
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 5,
       "carrier_name": "DHL Ecommerce",
       "carrier_code": "DHL",
-      "increase_percent": 4,
-      "active": 1
+      "increase_percent": 3.5,
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 6,
       "carrier_name": "DHL Ecom C2C",
       "carrier_code": "DHLC2C",
-      "increase_percent": 4,
-      "active": 1
+      "increase_percent": 3.5,
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 7,
       "carrier_name": "UPS",
       "carrier_code": "UPS",
-      "increase_percent": 3,
-      "active": 1
+      "increase_percent": 3.5,
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 8,
       "carrier_name": "InPost",
       "carrier_code": "INPOST",
-      "increase_percent": 3,
-      "active": 1
+      "increase_percent": 3.5,
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 9,
       "carrier_name": "Pro Carrier",
       "carrier_code": "PC",
       "increase_percent": 3.5,
-      "active": 1
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 10,
       "carrier_name": "AGL",
       "carrier_code": "AGL",
-      "increase_percent": 3,
-      "active": 1
+      "increase_percent": 3.5,
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 11,
       "carrier_name": "PPI",
       "carrier_code": "PPI",
-      "increase_percent": 3,
-      "active": 1
+      "increase_percent": 3.5,
+      "active": 1,
+      "fixed_markup_pence": 0
     },
     {
       "id": 12,
       "carrier_name": "API TEST",
       "carrier_code": "API TEST",
       "increase_percent": 0,
-      "active": 1
+      "active": 1,
+      "fixed_markup_pence": 0
     }
   ],
   "campaign_settings": {
