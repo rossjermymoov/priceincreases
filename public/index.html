@@ -894,14 +894,6 @@
         alert('Failed to save rules: ' + err.message);
       }
     }
-        await loadStatus();
-        if (document.getElementById('sandbox-customer-select')) {
-          await loadSandboxRates();
-        }
-      } catch (err) {
-        alert('Failed to save rules: ' + err.message);
-      }
-    }
 
     async function loadCustomers() {
       try {
