@@ -482,9 +482,19 @@ app.post('/api/sandbox/create-customer', async (req, res) => {
 });
 
 async function handleSandboxPushRates(req, res) {
+  let pricesToPush = req.body.prices;
+  const testDcId = (req.body.customer_dc_id || 'test Jan').trim();
   try {
-    const testDcId = (req.body.customer_dc_id || 'test Jan').trim();
-    let pricesToPush = req.body.prices;
+    const isTestCustomer = testDcId.toLowerCase().includes('test');
+    
+    // Safety lock enforcement: only sandbox test accounts can be pushed if locked
+    const lockRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'safety_lock'");
+    const isLocked = !lockRow[0] || lockRow[0].value !== 'UNLOCKED';
+    if (isLocked && !isTestCustomer) {
+      return res.status(403).json({
+        error: `Deployment Blocked: System Safety Lock is ACTIVE (LOCKED). Live price updates to customer "${testDcId}" cannot occur while the safety lock is engaged. Please unlock the system first.`
+      });
+    }
 
     if (!pricesToPush || !Array.isArray(pricesToPush) || pricesToPush.length === 0) {
       // Calculate rates for this customer from our rules engine
@@ -547,6 +557,215 @@ async function handleSandboxPushRates(req, res) {
 
 app.post('/api/sandbox/push-rates', handleSandboxPushRates);
 app.post('/api/sandbox/test-price-update', handleSandboxPushRates);
+
+// Staging & Safety Lock Management Endpoints
+app.get('/api/staging/status', async (req, res) => {
+  try {
+    const lockRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'safety_lock'");
+    const statusRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'staging_status'");
+    const stagedAtRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'staged_at'");
+
+    const safetyLock = lockRow[0]?.value || 'LOCKED';
+    const stagingStatus = statusRow[0]?.value || 'IDLE';
+    const stagedAt = stagedAtRow[0]?.value || null;
+
+    const stagedRates = await db.query('SELECT * FROM staged_rates');
+    const uniqueCusts = new Set(stagedRates.map(r => r.customer_dc_id));
+    const exemptRates = stagedRates.filter(r => r.is_exempt);
+
+    let totalOld = 0, totalNew = 0;
+    for (const r of stagedRates) {
+      totalOld += (r.current_price || r.old_price || 0);
+      totalNew += (r.staged_price || r.new_price || 0);
+    }
+    const totalDiff = totalNew - totalOld;
+    const avgPct = totalOld > 0 ? ((totalDiff / totalOld) * 100).toFixed(2) : '0.00';
+
+    res.json({
+      safetyLock,
+      stagingStatus,
+      stagedAt,
+      isLocked: safetyLock !== 'UNLOCKED',
+      summary: {
+        totalCustomers: uniqueCusts.size,
+        totalRates: stagedRates.length,
+        exemptRates: exemptRates.length,
+        totalOldCost: (totalOld / 100).toFixed(2),
+        totalNewCost: (totalNew / 100).toFixed(2),
+        totalDifference: (totalDiff / 100).toFixed(2),
+        averageIncreasePercent: avgPct
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/staging/lock', async (req, res) => {
+  try {
+    const isLocked = req.body.locked === true || req.body.locked === 'true' || req.body.lock === 'LOCKED' || req.body.action === 'lock';
+    const newLockState = isLocked ? 'LOCKED' : 'UNLOCKED';
+    const upsertSql = db.dbDriver === 'postgres'
+      ? 'INSERT INTO campaign_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
+      : 'INSERT OR REPLACE INTO campaign_settings (key, value) VALUES (?, ?)';
+
+    await db.query(upsertSql, ['safety_lock', newLockState]);
+    await db.query(
+      'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['SAFETY_LOCK_TOGGLED', 'SYSTEM', `Lock set to ${newLockState}`, newLockState, new Date().toISOString()]
+    );
+    res.json({ success: true, safetyLock: newLockState, isLocked: newLockState !== 'UNLOCKED' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/staging/generate', async (req, res) => {
+  try {
+    const calculated = await scheduler.calculateCustomerRates();
+    await db.query('DELETE FROM staged_rates');
+
+    const stagedList = calculated.map(r => ({
+      customer_dc_id: r.customer_dc_id,
+      customer_name: r.customer_name,
+      service_id: r.service_id,
+      service_name: r.service_name,
+      courier_code: r.courier_code,
+      zone_id: r.zone_id,
+      zone_name: r.zone_name,
+      weight_class_id: r.weight_class_id,
+      weight_band: r.weight_band,
+      current_price: r.old_price,
+      staged_price: r.new_price,
+      diff_pence: r.diff_pence,
+      applied_percent: r.applied_percent,
+      is_exempt: r.is_exempt ? 1 : 0,
+      exemption_reason: r.exemption_reason || null
+    }));
+
+    if (db.dbDriver === 'json-store') {
+      await db.query('INSERT INTO staged_rates', [stagedList]);
+    } else {
+      for (const r of stagedList) {
+        await db.query(
+          'INSERT INTO staged_rates (customer_dc_id, customer_name, service_id, service_name, courier_code, zone_id, zone_name, weight_class_id, weight_band, current_price, staged_price, diff_pence, applied_percent, is_exempt, exemption_reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)',
+          [r.customer_dc_id, r.customer_name, r.service_id, r.service_name, r.courier_code, r.zone_id, r.zone_name, r.weight_class_id, r.weight_band, r.current_price, r.staged_price, r.diff_pence, r.applied_percent, r.is_exempt, r.exemption_reason]
+        );
+      }
+    }
+
+    const stagedAt = new Date().toISOString();
+    const upsertSql = db.dbDriver === 'postgres'
+      ? 'INSERT INTO campaign_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
+      : 'INSERT OR REPLACE INTO campaign_settings (key, value) VALUES (?, ?)';
+
+    await db.query(upsertSql, ['staging_status', 'STAGED']);
+    await db.query(upsertSql, ['staged_at', stagedAt]);
+
+    const uniqueCusts = new Set(stagedList.map(r => r.customer_dc_id));
+    await db.query(
+      'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['STAGING_GENERATED', 'SYSTEM', `Staged ${uniqueCusts.size} customers across ${stagedList.length} rates`, 'STAGED', stagedAt]
+    );
+
+    res.json({
+      success: true,
+      stagingStatus: 'STAGED',
+      stagedAt,
+      totalCustomers: uniqueCusts.size,
+      totalRates: stagedList.length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/staging/discard', async (req, res) => {
+  try {
+    await db.query('DELETE FROM staged_rates');
+    const upsertSql = db.dbDriver === 'postgres'
+      ? 'INSERT INTO campaign_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
+      : 'INSERT OR REPLACE INTO campaign_settings (key, value) VALUES (?, ?)';
+    await db.query(upsertSql, ['staging_status', 'IDLE']);
+    await db.query(upsertSql, ['staged_at', '']);
+    await db.query(
+      'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['STAGING_DISCARDED', 'SYSTEM', 'Staged proposals discarded', 'IDLE', new Date().toISOString()]
+    );
+    res.json({ success: true, stagingStatus: 'IDLE' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/staging/customer-rates', async (req, res) => {
+  try {
+    const dcId = req.query.customer_dc_id;
+    if (!dcId) return res.status(400).json({ error: 'customer_dc_id required' });
+
+    let staged = await db.query('SELECT * FROM staged_rates WHERE customer_dc_id = ?', [dcId]);
+    if (staged.length === 0) {
+      const calculated = await scheduler.calculateCustomerRates(dcId);
+      staged = calculated.map(r => ({
+        customer_dc_id: r.customer_dc_id,
+        customer_name: r.customer_name,
+        service_id: r.service_id,
+        service_name: r.service_name,
+        courier_code: r.courier_code,
+        zone_id: r.zone_id,
+        zone_name: r.zone_name,
+        weight_class_id: r.weight_class_id,
+        weight_band: r.weight_band,
+        current_price: r.old_price,
+        staged_price: r.new_price,
+        diff_pence: r.diff_pence,
+        applied_percent: r.applied_percent,
+        is_exempt: r.is_exempt ? 1 : 0,
+        exemption_reason: r.exemption_reason || null
+      }));
+    }
+    res.json({ customer_dc_id: dcId, rates: staged });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/staging/release', async (req, res) => {
+  try {
+    const lockRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'safety_lock'");
+    const isLocked = !lockRow[0] || lockRow[0].value !== 'UNLOCKED';
+    if (isLocked) {
+      return res.status(403).json({
+        error: 'Deployment Blocked: System Safety Lock is ACTIVE (LOCKED). You must explicitly unlock the system before any live rate changes can occur.'
+      });
+    }
+
+    const statusRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'staging_status'");
+    if (statusRow[0]?.value !== 'STAGED') {
+      return res.status(400).json({
+        error: 'No rates currently staged. Please stage rates for review first.'
+      });
+    }
+
+    const result = await scheduler.executeCampaign('STAGED_RELEASE');
+
+    // Automatically re-lock system for safety
+    const upsertSql = db.dbDriver === 'postgres'
+      ? 'INSERT INTO campaign_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
+      : 'INSERT OR REPLACE INTO campaign_settings (key, value) VALUES (?, ?)';
+    await db.query(upsertSql, ['safety_lock', 'LOCKED']);
+    await db.query(upsertSql, ['staging_status', 'DEPLOYED']);
+
+    await db.query(
+      'INSERT INTO audit_logs (event_type, customer_dc_id, details, status, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['SAFETY_LOCK_AUTO_RELOCKED', 'SYSTEM', 'System automatically re-locked following rate deployment', 'LOCKED', new Date().toISOString()]
+    );
+
+    res.json({ success: true, message: 'Staged rates deployed successfully to Despatch Cloud Billing API. System re-locked.', result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // 7. Execution & Scheduling
 app.post('/api/campaign/arm', async (req, res) => {

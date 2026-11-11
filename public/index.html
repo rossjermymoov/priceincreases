@@ -118,6 +118,47 @@
   </header>
 
   <!-- ========================================== -->
+  <!-- SAFETY LOCK & STAGED RELEASE WORKFLOW BAR  -->
+  <!-- ========================================== -->
+  <div id="safety-lock-ribbon" class="mb-6 p-4 rounded-2xl border transition-all duration-300 shadow-sm flex flex-wrap items-center justify-between gap-4 bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800">
+    <div class="flex items-center gap-3.5">
+      <div id="lock-icon-badge" class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shadow-sm">
+        🔒
+      </div>
+      <div>
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <span class="font-extrabold text-xs tracking-wide text-slate-900 dark:text-white" id="lock-title-text">SYSTEM SAFETY LOCK: ACTIVE</span>
+          <span class="badge bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-extrabold" id="lock-status-badge">PROTECTED</span>
+          <span class="badge bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 font-extrabold hidden" id="staging-status-badge">📋 STAGING ACTIVE</span>
+        </div>
+        <p class="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5" id="lock-desc-text">
+          Live rate changes to Despatch Cloud Billing API are blocked. Two-step staging workflow required before release.
+        </p>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2.5">
+      <!-- Staging Buttons -->
+      <button onclick="triggerGenerateStaging()" id="btn-stage-rates" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-sm flex items-center gap-1.5">
+        <span>📋</span> Stage Rates for Review
+      </button>
+
+      <button onclick="triggerDiscardStaging()" id="btn-discard-staging" class="hidden bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs px-3 py-2 rounded-xl transition border border-slate-300 dark:border-slate-700">
+        ↺ Discard Staging
+      </button>
+
+      <button onclick="promptReleaseStagedRates()" id="btn-release-rates" class="hidden bg-slate-200 dark:bg-slate-800 text-slate-400 font-bold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-not-allowed">
+        <span>🔒</span> Release Staged Rates (Locked)
+      </button>
+
+      <!-- Safety Lock Switch Button -->
+      <button onclick="handleLockToggleClick()" id="btn-toggle-lock" class="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-2xs">
+        <span>🔓</span> Unlock System
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
   <!-- EXECUTIVE STATS BAR (5 Clean Stat Cards)   -->
   <!-- ========================================== -->
   <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5 mb-7">
@@ -465,10 +506,10 @@
       <div class="glass-card p-6 space-y-4">
         <div>
           <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <span>⚡</span> Bulk Rate Deployment
+            <span>⚡</span> Two-Step Staged Deployment
           </h3>
           <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Transmits calculated rate adjustments to all active, non-exempt customer accounts in Despatch Cloud.
+            Stage prices to inspect each customer's future rate card first. Release is protected by the Safety Lock.
           </p>
         </div>
 
@@ -481,14 +522,25 @@
             <span>Excluded / 0% Increase:</span>
             <strong class="text-amber-600 dark:text-amber-400 font-mono text-sm" id="live-summary-exempt">...</strong>
           </div>
+          <div class="flex justify-between pb-2 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300">
+            <span>Safety Lock Status:</span>
+            <span class="font-bold text-emerald-600 dark:text-emerald-400" id="card-lock-status">🔒 ACTIVE (Locked)</span>
+          </div>
           <div class="flex justify-between text-slate-600 dark:text-slate-300">
             <span>Throttling:</span>
             <span class="badge bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">Safe ~5 calls/sec</span>
           </div>
 
-          <button onclick="triggerImmediateRun()" class="w-full bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition mt-2">
-            <span>⚡</span> Execute Full Price Increase
-          </button>
+          <!-- Action Buttons -->
+          <div class="pt-2 space-y-2">
+            <button onclick="triggerGenerateStaging()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition">
+              <span>📋</span> Step 1: Stage Rates for Review
+            </button>
+
+            <button onclick="promptReleaseStagedRates()" id="card-btn-release" class="w-full bg-slate-200 dark:bg-slate-800 text-slate-400 text-xs px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition cursor-not-allowed">
+              <span>🔒</span> Step 2: Release to Billing API (Locked)
+            </button>
+          </div>
 
           <div id="progress-box" class="hidden space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
             <div class="flex justify-between text-xs text-slate-600 dark:text-slate-300">
@@ -548,17 +600,26 @@
         <button onclick="closeRateInspector()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xl font-bold p-1">✕</button>
       </div>
 
+      <!-- Staged Rate Proposal Banner -->
+      <div id="modal-staging-context" class="mx-6 mt-3.5 p-3 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex items-center justify-between text-xs text-indigo-700 dark:text-indigo-300">
+        <div class="flex items-center gap-2">
+          <span class="font-black text-sm">📋</span>
+          <span><strong>Staged Future Rates:</strong> Compare each service's <em>Current Active Price</em> against the <em>Staged Future Price</em> before releasing.</span>
+        </div>
+        <span class="badge bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 font-bold">PREVIEW MODE</span>
+      </div>
+
       <!-- Modal Body (Table) -->
       <div class="overflow-y-auto p-4 flex-1">
         <table class="w-full text-left text-xs">
           <thead class="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-700">
             <tr>
               <th class="p-2.5">Carrier & Service</th>
-              <th class="p-2.5">Zone & Weight Band</th>
-              <th class="p-2.5 text-right">Current Base</th>
-              <th class="p-2.5 text-right">Increase %</th>
-              <th class="p-2.5 text-right">New Price</th>
-              <th class="p-2.5 text-right">Diff (£)</th>
+              <th class="p-2.5">Zone & Weight</th>
+              <th class="p-2.5 text-right">Current Live £</th>
+              <th class="p-2.5 text-right">% Markup</th>
+              <th class="p-2.5 text-right font-extrabold text-slate-900 dark:text-white">Staged Future £</th>
+              <th class="p-2.5 text-right">Net Diff</th>
               <th class="p-2.5 text-center">Status</th>
             </tr>
           </thead>
@@ -610,6 +671,81 @@
   </div>
 
   <!-- ========================================== -->
+  <!-- MODAL: UNLOCK SAFETY LOCK CONFIRMATION     -->
+  <!-- ========================================== -->
+  <div id="unlock-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center gap-3 text-amber-600 dark:text-amber-400">
+        <span class="text-3xl">⚠️</span>
+        <div>
+          <h3 class="font-extrabold text-slate-900 dark:text-white text-base">Unlock System Safety Lock?</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Physical confirmation required before live changes</p>
+        </div>
+      </div>
+      <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        Unlocking removes the protection barrier that prevents updates from reaching the Despatch Cloud Billing API. 
+        Once unlocked, live rate deployments are permitted. You can re-lock the system at any time with a single click.
+      </p>
+      <div class="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300 font-medium">
+        🔒 Recommended: Only unlock immediately before triggering a verified staged release.
+      </div>
+      <div class="flex items-center justify-end gap-2.5 pt-2">
+        <button onclick="closeUnlockModal()" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition">
+          Keep Locked
+        </button>
+        <button onclick="confirmUnlockSafetyLock()" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 shadow-sm transition flex items-center gap-1.5">
+          <span>🔓</span> Yes, Unlock System
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: RELEASE STAGED RATES CONFIRMATION   -->
+  <!-- ========================================== -->
+  <div id="release-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
+        <span class="text-3xl">🚀</span>
+        <div>
+          <h3 class="font-extrabold text-slate-900 dark:text-white text-base">Confirm Release to Billing API</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Final authorization step</p>
+        </div>
+      </div>
+      <div class="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1.5 font-medium">
+        <div class="flex justify-between">
+          <span class="text-slate-500">Staged Customers to Update:</span>
+          <strong class="text-slate-900 dark:text-white font-mono" id="release-modal-cust-count">...</strong>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">Total Rate Cards:</span>
+          <strong class="text-slate-900 dark:text-white font-mono" id="release-modal-rate-count">...</strong>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">Average Rate Increase:</span>
+          <strong class="text-emerald-600 dark:text-emerald-400 font-mono" id="release-modal-avg-inc">+3.5%</strong>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">API Throttling:</span>
+          <strong class="text-slate-700 dark:text-slate-300">~5 safe calls/sec</strong>
+        </div>
+      </div>
+      <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        This will immediately push the staged prices to the live contract rate cards in Despatch Cloud. 
+        Upon completion, the system will <strong>automatically re-lock itself</strong> to protect against any further changes.
+      </p>
+      <div class="flex items-center justify-end gap-2.5 pt-2">
+        <button onclick="closeReleaseModal()" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition">
+          Cancel / Keep Staged
+        </button>
+        <button onclick="executeStagedRelease()" id="btn-confirm-release-now" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-md transition flex items-center gap-1.5">
+          <span>🚀</span> Yes, Release Rates Now
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
   <!-- APPLICATION SCRIPTS                        -->
   <!-- ========================================== -->
   <script>
@@ -620,6 +756,9 @@
     const selectedDcIds = new Set();
     let auditLogsCache = [];
     let currentSandboxRates = [];
+    let safetyLockActive = true;
+    let stagingStatus = 'IDLE';
+    let stagingSummary = null;
 
     // Theme Switcher Logic
     function initTheme() {
@@ -642,11 +781,220 @@
     initTheme();
 
     async function init() {
+      await loadStagingAndLockStatus();
       await loadStatus();
       await loadRules();
       await loadCustomers();
       await loadSandboxRates();
       await loadAuditLogs();
+    }
+
+    async function loadStagingAndLockStatus() {
+      try {
+        const res = await fetch('/api/staging/status');
+        const data = await res.json();
+        safetyLockActive = data.isLocked !== false;
+        stagingStatus = data.stagingStatus || 'IDLE';
+        stagingSummary = data.summary || null;
+
+        const ribbon = document.getElementById('safety-lock-ribbon');
+        const iconBadge = document.getElementById('lock-icon-badge');
+        const titleText = document.getElementById('lock-title-text');
+        const statusBadge = document.getElementById('lock-status-badge');
+        const stagingBadge = document.getElementById('staging-status-badge');
+        const descText = document.getElementById('lock-desc-text');
+        const btnToggleLock = document.getElementById('btn-toggle-lock');
+        const btnDiscardStaging = document.getElementById('btn-discard-staging');
+        const btnReleaseRates = document.getElementById('btn-release-rates');
+        const cardLockStatus = document.getElementById('card-lock-status');
+        const cardBtnRelease = document.getElementById('card-btn-release');
+
+        if (safetyLockActive) {
+          if (ribbon) {
+            ribbon.className = 'mb-6 p-4 rounded-2xl border transition-all duration-300 shadow-sm flex flex-wrap items-center justify-between gap-4 bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800';
+          }
+          if (iconBadge) {
+            iconBadge.className = 'w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shadow-sm';
+            iconBadge.innerText = '🔒';
+          }
+          if (titleText) titleText.innerText = 'SYSTEM SAFETY LOCK: ACTIVE';
+          if (statusBadge) {
+            statusBadge.className = 'badge bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-extrabold';
+            statusBadge.innerText = 'PROTECTED';
+          }
+          if (descText) descText.innerText = 'Live rate changes to Despatch Cloud Billing API are blocked. Two-step staging workflow required before release.';
+          if (btnToggleLock) {
+            btnToggleLock.className = 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-2xs';
+            btnToggleLock.innerHTML = '<span>🔓</span> Unlock System';
+          }
+          if (cardLockStatus) cardLockStatus.innerHTML = '<span class="text-emerald-600 dark:text-emerald-400 font-bold">🔒 ACTIVE (Locked)</span>';
+          if (cardBtnRelease) {
+            cardBtnRelease.className = 'w-full bg-slate-200 dark:bg-slate-800 text-slate-400 text-xs px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition cursor-not-allowed';
+            cardBtnRelease.innerHTML = '<span>🔒</span> Step 2: Release to Billing API (Locked)';
+          }
+        } else {
+          if (ribbon) {
+            ribbon.className = 'mb-6 p-4 rounded-2xl border transition-all duration-300 shadow-sm flex flex-wrap items-center justify-between gap-4 bg-amber-500/10 dark:bg-amber-950/40 border-amber-400/80 dark:border-amber-700';
+          }
+          if (iconBadge) {
+            iconBadge.className = 'w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shadow-sm animate-pulse';
+            iconBadge.innerText = '⚠️';
+          }
+          if (titleText) titleText.innerText = 'SAFETY LOCK: UNLOCKED (Live Deployments Enabled)';
+          if (statusBadge) {
+            statusBadge.className = 'badge bg-amber-500 text-white font-extrabold';
+            statusBadge.innerText = 'UNLOCKED';
+          }
+          if (descText) descText.innerText = 'Caution: System is UNLOCKED. Live rate changes to Despatch Cloud Billing API are now permitted.';
+          if (btnToggleLock) {
+            btnToggleLock.className = 'bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm';
+            btnToggleLock.innerHTML = '<span>🔒</span> Re-Lock System';
+          }
+          if (cardLockStatus) cardLockStatus.innerHTML = '<span class="text-amber-600 dark:text-amber-400 font-bold">⚠️ UNLOCKED (Live Permitted)</span>';
+          if (cardBtnRelease) {
+            cardBtnRelease.className = 'w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition';
+            cardBtnRelease.innerHTML = '<span>🚀</span> Step 2: Release to Billing API Now';
+          }
+        }
+
+        if (stagingStatus === 'STAGED') {
+          if (stagingBadge) {
+            stagingBadge.classList.remove('hidden');
+            stagingBadge.innerText = `📋 STAGED (${stagingSummary?.totalCustomers || 0} Accounts)`;
+          }
+          if (btnDiscardStaging) btnDiscardStaging.classList.remove('hidden');
+          if (btnReleaseRates) {
+            btnReleaseRates.classList.remove('hidden');
+            if (safetyLockActive) {
+              btnReleaseRates.className = 'bg-slate-200 dark:bg-slate-800 text-slate-400 font-bold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-not-allowed';
+              btnReleaseRates.innerHTML = '<span>🔒</span> Release Staged Rates (Locked)';
+            } else {
+              btnReleaseRates.className = 'bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20';
+              btnReleaseRates.innerHTML = '<span>🚀</span> Release Staged Rates Now';
+            }
+          }
+        } else {
+          if (stagingBadge) stagingBadge.classList.add('hidden');
+          if (btnDiscardStaging) btnDiscardStaging.classList.add('hidden');
+          if (btnReleaseRates) btnReleaseRates.classList.add('hidden');
+        }
+      } catch (err) {
+        console.error('Error loading staging status:', err);
+      }
+    }
+
+    function handleLockToggleClick() {
+      if (safetyLockActive) {
+        document.getElementById('unlock-modal').classList.remove('hidden');
+      } else {
+        setSafetyLock(true);
+      }
+    }
+
+    function closeUnlockModal() {
+      document.getElementById('unlock-modal').classList.add('hidden');
+    }
+
+    async function confirmUnlockSafetyLock() {
+      closeUnlockModal();
+      await setSafetyLock(false);
+    }
+
+    async function setSafetyLock(locked) {
+      try {
+        const res = await fetch('/api/staging/lock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locked })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        await loadStagingAndLockStatus();
+      } catch (err) {
+        alert('Failed to update safety lock: ' + err.message);
+      }
+    }
+
+    async function triggerGenerateStaging() {
+      const btn = document.getElementById('btn-stage-rates');
+      if (btn) btn.innerText = 'Calculating Staging...';
+      try {
+        const res = await fetch('/api/staging/generate', { method: 'POST' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        await loadStagingAndLockStatus();
+        await loadCustomers();
+        alert(`✓ Staged ${data.totalCustomers} customer rate cards successfully!\n\nYou can now go to "2. Customer Directory", click 🔍 Rates on any customer to inspect their exact future prices, then release when ready.`);
+      } catch (err) {
+        alert('Failed to stage rates: ' + err.message);
+      } finally {
+        if (btn) btn.innerHTML = '<span>📋</span> Stage Rates for Review';
+      }
+    }
+
+    async function triggerDiscardStaging() {
+      if (!confirm('Discard current staged rate proposals? This will reset staging to IDLE.')) return;
+      try {
+        const res = await fetch('/api/staging/discard', { method: 'POST' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        await loadStagingAndLockStatus();
+        await loadCustomers();
+      } catch (err) {
+        alert('Failed to discard staging: ' + err.message);
+      }
+    }
+
+    function promptReleaseStagedRates() {
+      if (safetyLockActive) {
+        alert('⚠️ System Safety Lock is ACTIVE.\n\nYou cannot release rates while the safety lock is engaged.\nPlease click "Unlock System" first to allow releases.');
+        return;
+      }
+      if (stagingStatus !== 'STAGED') {
+        alert('No rates currently staged.\nPlease click "Stage Rates for Review" first to review prices before releasing.');
+        return;
+      }
+      const countEl = document.getElementById('release-modal-cust-count');
+      if (countEl) countEl.innerText = `${stagingSummary?.totalCustomers || 121} Active Accounts`;
+      const rateEl = document.getElementById('release-modal-rate-count');
+      if (rateEl) rateEl.innerText = `${stagingSummary?.totalRates || 1452} Rate Cards`;
+      const avgEl = document.getElementById('release-modal-avg-inc');
+      if (avgEl) avgEl.innerText = `+${stagingSummary?.averageIncreasePercent || '3.5'}%`;
+      document.getElementById('release-modal').classList.remove('hidden');
+    }
+
+    function closeReleaseModal() {
+      document.getElementById('release-modal').classList.add('hidden');
+    }
+
+    async function executeStagedRelease() {
+      closeReleaseModal();
+      const progressBox = document.getElementById('progress-box');
+      const progressBar = document.getElementById('progress-bar');
+      const progressText = document.getElementById('progress-text');
+      const progressPct = document.getElementById('progress-pct');
+
+      if (progressBox) progressBox.classList.remove('hidden');
+      if (progressBar) progressBar.style.width = '30%';
+      if (progressText) progressText.innerText = 'Transmitting staged rate cards...';
+      if (progressPct) progressPct.innerText = '30%';
+
+      try {
+        const res = await fetch('/api/staging/release', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+
+        if (progressBar) progressBar.style.width = '100%';
+        if (progressPct) progressPct.innerText = '100%';
+        if (progressText) progressText.innerText = '✓ Deployment Complete';
+
+        alert('✓ Staged rates deployed successfully to Despatch Cloud Billing API!\n\nFor security, the System Safety Lock has automatically re-locked.');
+        await loadStagingAndLockStatus();
+        await loadStatus();
+        await loadCustomers();
+        await loadAuditLogs();
+      } catch (err) {
+        alert('Deployment failed: ' + err.message);
+        if (progressText) progressText.innerText = '❌ Failed: ' + err.message;
+      }
     }
 
     async function loadStatus() {

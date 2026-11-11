@@ -119,13 +119,39 @@ async function query(sql, params = []) {
     return [...store.data.pricing_rules];
   }
 
+  if (lower.startsWith('select * from staged_rates')) {
+    let list = store.data.staged_rates || [];
+    if (lower.includes('where customer_dc_id =')) {
+      const targetDcId = params[0];
+      list = list.filter(r => r.customer_dc_id === targetDcId);
+    }
+    return list;
+  }
+
+  if (lower.startsWith('delete from staged_rates')) {
+    store.data.staged_rates = [];
+    store.save();
+    return [];
+  }
+
+  if (lower.startsWith('insert into staged_rates')) {
+    if (!store.data.staged_rates) store.data.staged_rates = [];
+    if (Array.isArray(params[0])) {
+      store.data.staged_rates = [...params[0]];
+    } else if (params[0]) {
+      store.data.staged_rates.push(params[0]);
+    }
+    store.save();
+    return [];
+  }
+
   if (lower.includes("from campaign_settings where key =")) {
-    const key = params[0] || (
-      lower.includes("'campaign_status'") ? 'campaign_status' :
-      (lower.includes("'cutoff_date'") ? 'cutoff_date' :
-      (lower.includes("'exclude_no_invoice_12m'") ? 'exclude_no_invoice_12m' : 'scheduled_date'))
-    );
-    const val = store.data.campaign_settings[key];
+    let key = params[0];
+    if (!key) {
+      const match = sql.match(/key\s*=\s*['"]([^'"]+)['"]/i);
+      key = match ? match[1] : null;
+    }
+    const val = store.data.campaign_settings ? store.data.campaign_settings[key] : undefined;
     return val !== undefined ? [{ value: val }] : [];
   }
 
@@ -387,6 +413,8 @@ async function initDb() {
     await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['scheduled_date', '2027-01-01T00:01:00Z']);
     await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['campaign_status', 'DRAFT']);
     await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['exclude_no_invoice_12m', '1']);
+    await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['safety_lock', 'LOCKED']);
+    await query('INSERT INTO campaign_settings (key, value) VALUES (?, ?)', ['staging_status', 'IDLE']);
   }
 
   console.log(`[DB] Storage engine initialized: ${dbDriver.toUpperCase()}`);

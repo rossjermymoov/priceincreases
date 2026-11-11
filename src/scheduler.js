@@ -35,6 +35,11 @@ class PricingScheduler {
       const scheduledDateStr = dateSetting[0]?.value;
 
       if (status === 'ARMED' && scheduledDateStr) {
+        const lockRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'safety_lock'");
+        const isLocked = !lockRow[0] || lockRow[0].value !== 'UNLOCKED';
+        if (isLocked) {
+          return; // Safety locked, skip automated release
+        }
         const scheduledTime = new Date(scheduledDateStr).getTime();
         const now = Date.now();
 
@@ -175,6 +180,12 @@ class PricingScheduler {
   }
 
   async executeCampaign(triggeredBy = 'MANUAL') {
+    const lockRow = await db.query("SELECT value FROM campaign_settings WHERE key = 'safety_lock'");
+    const isLocked = !lockRow[0] || lockRow[0].value !== 'UNLOCKED';
+    if (isLocked) {
+      throw new Error('Deployment Blocked: System Safety Lock is ACTIVE (LOCKED). You must explicitly unlock the system before any live rate changes can occur.');
+    }
+
     if (this.isRunning) {
       throw new Error('A price update campaign is already in progress.');
     }
