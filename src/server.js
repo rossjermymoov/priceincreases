@@ -910,31 +910,24 @@ async function auditCustomerInvoices(customers) {
 }
 
 async function ensureRatesForCustomers(customers) {
-  const sampleServices = [
-    { service_id: 764, name: 'DPD Next Day', courier: 'DPD', zone_id: 9527, zone_name: 'Mainland', weight_id: 17516, weight_name: 'Parcel', price: 545, sub: 100 },
-    { service_id: 1644, name: 'Yodel C2C', courier: 'YODC2C', zone_id: 14016, zone_name: 'Mainland', weight_id: 25269, weight_name: '0 - 1 KG', price: 395, sub: 80 },
-    { service_id: 2313, name: 'Royal Mail 1st Class Signed For', courier: 'RM', zone_id: 17591, zone_name: 'UK', weight_id: 30189, weight_name: 'Parcel', price: 320, sub: 50 },
-    { service_id: 886, name: 'Evri International DDP', courier: 'EvRi', zone_id: 10355, zone_name: 'Austria', weight_id: 18320, weight_name: '0-250g', price: 310, sub: 60 },
-    { service_id: 1362, name: 'DHL Ecommerce Parcel', courier: 'DHL', zone_id: 12799, zone_name: 'Zone A', weight_id: 23135, weight_name: 'Parcel', price: 480, sub: 90 },
-    { service_id: 1650, name: 'DHL Bagit 1Kg C2C', courier: 'DHLC2C', zone_id: 14031, zone_name: 'Mainland', weight_id: 25289, weight_name: 'Small Bagit', price: 340, sub: 70 },
-    { service_id: 1537, name: 'UPS Standard UK', courier: 'UPS', zone_id: 13239, zone_name: 'Mainland', weight_id: 23710, weight_name: '2 - 5 KG', price: 650, sub: 130 },
-    { service_id: 3542, name: 'InPost 2Door Small', courier: 'INPOST', zone_id: 32573, zone_name: 'Mainland', weight_id: 39677, weight_name: 'Inpost Mini', price: 280, sub: 45 },
-    { service_id: 1264, name: 'Royal Mail Tracked 48', courier: 'PC', zone_id: 12502, zone_name: 'United Kingdom', weight_id: 22707, weight_name: 'Up to 2KG', price: 295, sub: 50 },
-    { service_id: 2753, name: 'Yodel Xpect Mini 24', courier: 'AGL', zone_id: 20703, zone_name: 'Mainland', weight_id: 33687, weight_name: 'Packet', price: 360, sub: 65 },
-    { service_id: 1353, name: 'PPI Label', courier: 'PPI', zone_id: 12771, zone_name: 'UK', weight_id: 23094, weight_name: 'Parcel', price: 220, sub: 40 },
-    { service_id: 2776, name: 'Testy Service 2', courier: 'API TEST', zone_id: 20811, zone_name: 'Greece', weight_id: 33789, weight_name: '0 kg - 0.5 kg', price: 250, sub: 50 }
-  ];
-
-  for (const c of customers) {
-    if (!c.dc_id) continue;
-    for (const s of sampleServices) {
-      const rSql = db.dbDriver === 'postgres'
-        ? 'INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING'
-        : 'INSERT OR IGNORE INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-      await db.query(rSql, [c.dc_id, s.courier, s.service_id, s.name, s.zone_id, s.zone_name, s.weight_id, s.weight_name, s.price, s.sub]);
-    }
+  const existing = await db.query('SELECT count(*) as count FROM customer_rates');
+  const count = Number(existing[0]?.count || 0);
+  if (count === 0) {
+    console.log('[RateShift] Customer rates empty. Ingesting from prices.csv...');
+    const { ingestPrices } = require('../scripts/ingest_prices');
+    await ingestPrices();
   }
 }
+
+app.post('/api/rates/reload-csv', async (req, res) => {
+  try {
+    const { ingestPrices } = require('../scripts/ingest_prices');
+    const count = await ingestPrices();
+    res.json({ success: true, count, message: `Successfully reloaded ${count} rates from prices.csv` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Start Server
 async function start() {
