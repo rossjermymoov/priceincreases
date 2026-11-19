@@ -409,7 +409,54 @@ async function initDb() {
       ALTER TABLE staged_rates ADD COLUMN IF NOT EXISTS current_sub_price INTEGER;
       ALTER TABLE staged_rates ADD COLUMN IF NOT EXISTS staged_sub_price INTEGER;
       ALTER TABLE staged_rates ADD COLUMN IF NOT EXISTS diff_sub_pence INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_customer_rates_dc ON customer_rates (customer_dc_id);
+      CREATE INDEX IF NOT EXISTS idx_customer_rates_svc ON customer_rates (service_id);
+      CREATE INDEX IF NOT EXISTS idx_customers_dc ON customers (dc_id);
+      CREATE INDEX IF NOT EXISTS idx_staged_rates_dc ON staged_rates (customer_dc_id);
     `);
+
+    // Auto-seed PostgreSQL on fresh creation
+    const custCountRow = await pool.query('SELECT count(*) as count FROM customers');
+    if (Number(custCountRow.rows[0]?.count || 0) === 0) {
+      const seedPath = path.join(__dirname, '../data/seed.json');
+      if (fs.existsSync(seedPath)) {
+        console.log('[DB-PostgreSQL] Fresh database detected. Importing 71k+ live rates and customer accounts from seed.json...');
+        const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        if (seed.couriers && seed.couriers.length > 0) {
+          for (const cr of seed.couriers) {
+            await pool.query('INSERT INTO couriers (id, name, code) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING', [cr.id, cr.name, cr.code]);
+          }
+        }
+        if (seed.courier_services && seed.courier_services.length > 0) {
+          for (const s of seed.courier_services) {
+            await pool.query('INSERT INTO courier_services (id, courier_id, name, code) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING', [s.id, s.courier_id, s.name, s.code]);
+          }
+        }
+        if (seed.customers && seed.customers.length > 0) {
+          for (const c of seed.customers) {
+            await pool.query(
+              'INSERT INTO customers (id, dc_id, name, email, created_at, billing_period, is_exempt, custom_increase_pct, last_invoice_date, total_invoices, is_inactive_excluded) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (dc_id) DO NOTHING',
+              [c.id || Date.now(), c.dc_id, c.name, c.email, c.created_at, c.billing_period || 'weekly', c.is_exempt || 0, c.custom_increase_pct || null, c.last_invoice_date || null, c.total_invoices || 0, c.is_inactive_excluded || 0]
+            );
+          }
+        }
+        if (seed.customer_rates && seed.customer_rates.length > 0) {
+          const chunkSize = 500;
+          for (let i = 0; i < seed.customer_rates.length; i += chunkSize) {
+            const chunk = seed.customer_rates.slice(i, i + chunkSize);
+            const values = [];
+            const params = [];
+            let pIdx = 1;
+            for (const r of chunk) {
+              values.push(`($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`);
+              params.push(r.customer_dc_id, r.courier_code, r.service_id, r.service_name, r.zone_id, r.zone_name, r.weight_class_id, r.weight_band, r.current_price_pence, r.current_sub_price_pence);
+            }
+            await pool.query(`INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ${values.join(', ')} ON CONFLICT (customer_dc_id, service_id, zone_id, weight_class_id) DO NOTHING`, params);
+          }
+        }
+        console.log(`[DB-PostgreSQL] Successfully seeded ${seed.customers?.length || 0} customers and ${seed.customer_rates?.length || 0} rate cards into indexed PostgreSQL tables!`);
+      }
+    }
   }
 
   // Seed default pricing rules if empty

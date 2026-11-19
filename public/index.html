@@ -786,12 +786,13 @@
     initTheme();
 
     async function init() {
-      await loadStagingAndLockStatus();
-      await loadStatus();
-      await loadRules();
-      await loadCustomers();
-      await loadSandboxRates();
-      await loadAuditLogs();
+      await Promise.all([
+        loadStagingAndLockStatus(),
+        loadStatus(),
+        loadRules(),
+        loadCustomers(),
+        loadAuditLogs()
+      ]);
     }
 
     async function loadStagingAndLockStatus() {
