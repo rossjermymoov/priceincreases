@@ -54,9 +54,14 @@ let store = null;
 
 if (isPostgres) {
   const { Pool } = require('pg');
+  const dbUrl = process.env.DATABASE_URL;
+  const isLocal = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
+  const isInternal = dbUrl.includes('.railway.internal') || dbUrl.includes('railway.internal');
+  const useSsl = !isLocal && !isInternal && !dbUrl.includes('sslmode=disable');
+
   pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+    connectionString: dbUrl,
+    ssl: useSsl ? { rejectUnauthorized: false } : false
   });
   dbDriver = 'postgres';
 } else {
@@ -319,7 +324,11 @@ async function query(sql, params = []) {
 
 async function initDb() {
   if (dbDriver === 'postgres') {
-    await query(`
+    try {
+      console.log('[DB-PostgreSQL] Connecting to PostgreSQL database...');
+      await pool.query('SELECT 1');
+      console.log('[DB-PostgreSQL] Connection confirmed. Creating schema and indexes...');
+      await query(`
       CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
         dc_id TEXT UNIQUE,
@@ -456,6 +465,9 @@ async function initDb() {
         }
         console.log(`[DB-PostgreSQL] Successfully seeded ${seed.customers?.length || 0} customers and ${seed.customer_rates?.length || 0} rate cards into indexed PostgreSQL tables!`);
       }
+    }
+    } catch (err) {
+      console.error('[DB-PostgreSQL] Initialization error:', err.message);
     }
   }
 

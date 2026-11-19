@@ -942,6 +942,28 @@ app.post('/api/rates/sync-live-billing', async (req, res) => {
   }
 });
 
+app.post('/api/db/migrate-to-postgres', async (req, res) => {
+  try {
+    if (db.dbDriver !== 'postgres') {
+      return res.status(400).json({
+        error: 'DATABASE_URL is not set on this service. Please add the DATABASE_URL variable in Railway first.',
+        currentDriver: db.dbDriver
+      });
+    }
+    await db.initDb();
+    const custs = await db.query('SELECT count(*) as count FROM customers');
+    const rates = await db.query('SELECT count(*) as count FROM customer_rates');
+    res.json({
+      success: true,
+      message: 'PostgreSQL database initialized and populated.',
+      customers: custs[0]?.count,
+      rates: rates[0]?.count
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 async function auditCustomerInvoices(customers) {
   console.log(`[InvoiceGate] Auditing 12-month invoice activity for ${customers.length} customers...`);
   const now = Date.now();
