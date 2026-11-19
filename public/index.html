@@ -473,12 +473,12 @@
             <table class="w-full text-left text-xs">
               <thead class="bg-slate-50 dark:bg-slate-900/80 text-slate-500 dark:text-slate-400 uppercase text-[10px] font-bold sticky top-0 border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th class="p-2.5">Courier</th>
-                  <th class="p-2.5">Service</th>
-                  <th class="p-2.5 text-right">Base £</th>
+                  <th class="p-2.5">Carrier</th>
+                  <th class="p-2.5">Service & Band</th>
+                  <th class="p-2.5 text-right font-bold text-slate-800 dark:text-slate-200">1st Box Rate</th>
+                  <th class="p-2.5 text-right font-bold text-indigo-700 dark:text-indigo-300">Sub Box Rate</th>
                   <th class="p-2.5 text-right">% Markup</th>
-                  <th class="p-2.5 text-right">New £</th>
-                  <th class="p-2.5 text-right">Diff</th>
+                  <th class="p-2.5 text-right">Net Impact</th>
                 </tr>
               </thead>
               <tbody id="sandbox-rates-tbody" class="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono text-xs">
@@ -590,23 +590,28 @@
   <!-- MODAL: CUSTOMER RATE INSPECTOR             -->
   <!-- ========================================== -->
   <div id="rate-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-5xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
       <!-- Modal Header -->
       <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
         <div>
           <h3 class="font-bold text-slate-900 dark:text-white text-base" id="modal-cust-name">Customer Rates</h3>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5" id="modal-cust-meta">Rate Card & Increase Breakdown</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5" id="modal-cust-meta">Rate Card & Increase Breakdown (1st & Subsequent Box Rates)</p>
         </div>
-        <button onclick="closeRateInspector()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xl font-bold p-1">✕</button>
+        <div class="flex items-center gap-2">
+          <button id="btn-modal-refresh-live" onclick="refreshLiveRatesFromBillingApi()" class="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition flex items-center gap-1.5 shadow-2xs">
+            <span>🔄</span> Refresh from Billing API
+          </button>
+          <button onclick="closeRateInspector()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xl font-bold p-1">✕</button>
+        </div>
       </div>
 
       <!-- Staged Rate Proposal Banner -->
       <div id="modal-staging-context" class="mx-6 mt-3.5 p-3 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex items-center justify-between text-xs text-indigo-700 dark:text-indigo-300">
         <div class="flex items-center gap-2">
           <span class="font-black text-sm">📋</span>
-          <span><strong>Staged Future Rates:</strong> Compare each service's <em>Current Active Price</em> against the <em>Staged Future Price</em> before releasing.</span>
+          <span><strong>Staged Future Rates:</strong> Verified against Despatch Cloud Billing API. Both 1st box rates and subsequent box rates (sub_price) are adjusted.</span>
         </div>
-        <span class="badge bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 font-bold">PREVIEW MODE</span>
+        <span class="badge bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 font-bold">LIVE RATE CARD</span>
       </div>
 
       <!-- Modal Body (Table) -->
@@ -616,10 +621,10 @@
             <tr>
               <th class="p-2.5">Carrier & Service</th>
               <th class="p-2.5">Zone & Weight</th>
-              <th class="p-2.5 text-right">Current Live £</th>
+              <th class="p-2.5 text-right font-extrabold text-slate-800 dark:text-slate-200">1st Box Rate</th>
+              <th class="p-2.5 text-right font-extrabold text-indigo-700 dark:text-indigo-300">Subsequent Box Rate</th>
               <th class="p-2.5 text-right">% Markup</th>
-              <th class="p-2.5 text-right font-extrabold text-slate-900 dark:text-white">Staged Future £</th>
-              <th class="p-2.5 text-right">Net Diff</th>
+              <th class="p-2.5 text-right">Net Diff (1st / Sub)</th>
               <th class="p-2.5 text-center">Status</th>
             </tr>
           </thead>
@@ -1491,11 +1496,16 @@
       }
     }
 
+    let currentInspectorDcId = null;
+    let currentInspectorCustName = null;
+
     async function openRateInspector(dcId, name) {
+      currentInspectorDcId = dcId;
+      currentInspectorCustName = name;
       const modal = document.getElementById('rate-modal');
       const tbody = document.getElementById('modal-table-body');
       document.getElementById('modal-cust-name').innerText = name || dcId;
-      document.getElementById('modal-cust-meta').innerText = `Customer DCID: ${dcId} • Breakdown of calculated rates`;
+      document.getElementById('modal-cust-meta').innerText = `Customer DCID: ${dcId} • Live Rate Card & Increase Breakdown (1st & Subsequent Box Rates)`;
       tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400 font-sans">Calculating customer rates...</td></tr>';
       modal.classList.remove('hidden');
 
@@ -1511,6 +1521,15 @@
 
         tbody.innerHTML = rates.map(r => {
           const info = getCarrierInfo(null, r.courier_code);
+          const oldGbp = (r.old_price / 100).toFixed(2);
+          const newGbp = (r.new_price / 100).toFixed(2);
+          const diffGbp = (r.diff_pence / 100).toFixed(2);
+          
+          const hasSub = r.old_sub_price !== null && r.old_sub_price !== undefined && Number(r.old_sub_price) > 0;
+          const oldSubGbp = hasSub ? (r.old_sub_price / 100).toFixed(2) : null;
+          const newSubGbp = hasSub ? (r.new_sub_price / 100).toFixed(2) : null;
+          const diffSubGbp = hasSub ? ((r.diff_sub_pence || 0) / 100).toFixed(2) : null;
+
           return `
           <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
             <td class="p-3 font-semibold text-slate-900 dark:text-white font-sans">
@@ -1522,10 +1541,29 @@
               </div>
             </td>
             <td class="p-3 text-slate-500 dark:text-slate-400 font-sans">${r.zone_name} (${r.weight_band})</td>
-            <td class="p-3 text-right text-slate-600 dark:text-slate-300">£${(r.old_price / 100).toFixed(2)}</td>
-            <td class="p-3 text-right ${r.applied_percent > 0 ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-slate-400'}">+${r.applied_percent}%</td>
-            <td class="p-3 text-right font-bold text-slate-900 dark:text-white">£${(r.new_price / 100).toFixed(2)}</td>
-            <td class="p-3 text-right ${r.diff_pence > 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400'}">+£${(r.diff_pence / 100).toFixed(2)}</td>
+            <td class="p-3 text-right">
+              <div class="flex items-center justify-end gap-1.5 font-mono">
+                <span class="text-slate-500">£${oldGbp}</span>
+                <span class="text-slate-400 text-[10px]">→</span>
+                <span class="font-extrabold text-slate-900 dark:text-white">£${newGbp}</span>
+              </div>
+              <div class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">+£${diffGbp}</div>
+            </td>
+            <td class="p-3 text-right">
+              ${hasSub ? `
+                <div class="flex items-center justify-end gap-1.5 font-mono">
+                  <span class="text-slate-500">£${oldSubGbp}</span>
+                  <span class="text-slate-400 text-[10px]">→</span>
+                  <span class="font-extrabold text-indigo-600 dark:text-indigo-400">£${newSubGbp}</span>
+                </div>
+                <div class="text-[10px] text-indigo-500 dark:text-indigo-300 font-semibold">+£${diffSubGbp}</div>
+              ` : `<span class="text-slate-400 dark:text-slate-500 font-sans text-xs">—</span>`}
+            </td>
+            <td class="p-3 text-right font-mono ${r.applied_percent > 0 ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-slate-400'}">+${r.applied_percent}%</td>
+            <td class="p-3 text-right font-mono">
+              <span class="${r.diff_pence > 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400'}">+£${diffGbp}</span>
+              ${hasSub ? `<span class="text-indigo-500 dark:text-indigo-400 font-medium text-[11px]"> / +£${diffSubGbp}</span>` : ''}
+            </td>
             <td class="p-3 text-center">
               ${r.is_exempt ? `<span class="badge bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-sans">0% (Exempt)</span>` : `<span class="badge bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-sans">Active Increase</span>`}
             </td>
@@ -1533,9 +1571,33 @@
         `;
         }).join('');
 
-        document.getElementById('modal-summary-text').innerText = `Total Rates: ${rates.length} | Old Total: £${data.summary?.totalOldCost} | New Total: £${data.summary?.totalNewCost} (+£${data.summary?.totalDifference})`;
+        const subRatesCount = rates.filter(r => r.old_sub_price !== null && r.old_sub_price !== undefined && Number(r.old_sub_price) > 0).length;
+        document.getElementById('modal-summary-text').innerHTML = `
+          <span>Total Rates: <strong>${rates.length}</strong> (${subRatesCount} with secondary box rates)</span>
+          <span class="mx-2">•</span>
+          <span>1st Box: <strong>£${data.summary?.totalOldCost}</strong> → <strong>£${data.summary?.totalNewCost}</strong> (+£${data.summary?.totalDifference})</span>
+        `;
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-red-500 font-sans">Failed to load rates: ${e.message}</td></tr>`;
+      }
+    }
+
+    async function refreshLiveRatesFromBillingApi() {
+      if (!currentInspectorDcId) return;
+      const btn = document.getElementById('btn-modal-refresh-live');
+      const oldHtml = btn.innerHTML;
+      btn.innerHTML = '<span>⏳</span> Syncing...';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/customers/${encodeURIComponent(currentInspectorDcId)}/sync-rates`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to refresh rates');
+        await openRateInspector(currentInspectorDcId, currentInspectorCustName);
+      } catch (err) {
+        alert('Failed to refresh from Billing API: ' + err.message);
+      } finally {
+        btn.innerHTML = oldHtml;
+        btn.disabled = false;
       }
     }
 
@@ -1660,23 +1722,41 @@
           const newGbp = (r.new_price / 100).toFixed(2);
           const diffGbp = (r.diff_pence / 100).toFixed(2);
 
+          const hasSub = r.old_sub_price !== null && r.old_sub_price !== undefined && Number(r.old_sub_price) > 0;
+          const oldSubGbp = hasSub ? (r.old_sub_price / 100).toFixed(2) : null;
+          const newSubGbp = hasSub ? (r.new_sub_price / 100).toFixed(2) : null;
+          const diffSubGbp = hasSub ? ((r.diff_sub_pence || 0) / 100).toFixed(2) : null;
+
           tr.innerHTML = `
             <td class="p-2.5">
-              <div class="flex items-center gap-2.5">
-                <div class="w-10 h-7 flex-shrink-0 flex items-center justify-center p-1 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs">
-                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-5 max-w-full object-contain">` : `<span class="text-[9px] font-bold text-slate-500 font-mono">${info.name}</span>`}
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-6 flex-shrink-0 flex items-center justify-center p-0.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-2xs">
+                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-4 max-w-full object-contain">` : `<span class="text-[9px] font-bold text-slate-500 font-mono">${info.name}</span>`}
                 </div>
                 <span class="font-bold text-xs text-slate-900 dark:text-white whitespace-nowrap">${info.name}</span>
               </div>
             </td>
-            <td class="p-2.5 text-slate-700 dark:text-slate-300 font-sans font-medium">${r.service_name}</td>
-            <td class="p-2.5 text-right text-slate-700 dark:text-slate-300 font-mono">
+            <td class="p-2.5 font-sans">
+              <div class="font-medium text-slate-800 dark:text-slate-200">${r.service_name}</div>
+              <div class="text-[10px] text-slate-400 font-mono">${r.zone_name || 'All'} • ${r.weight_band || ''}</div>
+            </td>
+            <td class="p-2.5 text-right font-mono">
               <div class="flex items-center justify-end gap-1">
-                <span>£</span>
-                <input type="number" step="0.01" min="0" value="${oldGbp}" 
-                       class="w-16 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-1.5 py-0.5 text-right font-mono text-slate-900 dark:text-white text-xs font-bold focus:outline-none focus:border-indigo-500 shadow-sm"
-                       onchange="updateSandboxRatePrice('${r.customer_dc_id}', ${r.service_id}, ${r.zone_id}, ${r.weight_class_id}, this.value, '${r.courier_code}')">
+                <span class="text-slate-500 text-[11px]">£${oldGbp}</span>
+                <span class="text-slate-400 text-[10px]">→</span>
+                <span class="font-extrabold text-slate-900 dark:text-white">£${newGbp}</span>
               </div>
+              <div class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">+£${diffGbp}</div>
+            </td>
+            <td class="p-2.5 text-right font-mono">
+              ${hasSub ? `
+                <div class="flex items-center justify-end gap-1">
+                  <span class="text-slate-500 text-[11px]">£${oldSubGbp}</span>
+                  <span class="text-slate-400 text-[10px]">→</span>
+                  <span class="font-extrabold text-indigo-600 dark:text-indigo-400">£${newSubGbp}</span>
+                </div>
+                <div class="text-[10px] text-indigo-500 dark:text-indigo-300 font-semibold">+£${diffSubGbp}</div>
+              ` : `<span class="text-slate-400 dark:text-slate-500 text-xs">—</span>`}
             </td>
             <td class="p-2.5 text-right font-mono">
               <div class="flex items-center justify-end gap-1">
@@ -1688,8 +1768,9 @@
                 <span class="text-slate-400 font-mono text-xs">%</span>
               </div>
             </td>
-            <td class="p-2.5 text-right font-extrabold text-slate-900 dark:text-white">£${newGbp}</td>
-            <td class="p-2.5 text-right text-emerald-600 dark:text-emerald-400 font-bold">+£${diffGbp}</td>
+            <td class="p-2.5 text-right text-emerald-600 dark:text-emerald-400 font-bold font-mono">
+              +£${diffGbp} ${hasSub ? `<span class="text-indigo-500 dark:text-indigo-400 font-medium text-[11px]">/ +£${diffSubGbp}</span>` : ''}
+            </td>
           `;
           tbody.appendChild(tr);
         });
@@ -1698,8 +1779,10 @@
       }
     }
 
-    async function updateSandboxRatePrice(dcId, serviceId, zoneId, weightClassId, priceGbp, courierCode) {
+    async function updateSandboxRatePrice(dcId, serviceId, zoneId, weightClassId, priceGbp, subPriceGbp, courierCode) {
       const pricePence = Math.round(parseFloat(priceGbp) * 100);
+      const hasSubVal = subPriceGbp !== null && subPriceGbp !== undefined && subPriceGbp !== '' && !isNaN(parseFloat(subPriceGbp));
+      const subPricePence = hasSubVal ? Math.round(parseFloat(subPriceGbp) * 100) : null;
       try {
         await fetch(`/api/customers/${encodeURIComponent(dcId)}/rates`, {
           method: 'POST',
@@ -1710,7 +1793,7 @@
               zone_id: zoneId,
               weight_class_id: weightClassId,
               price: pricePence,
-              sub_price: Math.round(pricePence * 0.2),
+              sub_price: subPricePence,
               courier_code: courierCode
             }]
           })

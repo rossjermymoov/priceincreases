@@ -385,6 +385,30 @@ async function initDb() {
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_pushed_at TEXT;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_pushed_status TEXT;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_new_customer INTEGER DEFAULT 0;
+      CREATE TABLE IF NOT EXISTS staged_rates (
+        id SERIAL PRIMARY KEY,
+        customer_dc_id TEXT,
+        customer_name TEXT,
+        service_id INTEGER,
+        service_name TEXT,
+        courier_code TEXT,
+        zone_id INTEGER,
+        zone_name TEXT,
+        weight_class_id INTEGER,
+        weight_band TEXT,
+        current_price INTEGER,
+        staged_price INTEGER,
+        diff_pence INTEGER,
+        current_sub_price INTEGER,
+        staged_sub_price INTEGER,
+        diff_sub_pence INTEGER,
+        applied_percent REAL,
+        is_exempt INTEGER DEFAULT 0,
+        exemption_reason TEXT
+      );
+      ALTER TABLE staged_rates ADD COLUMN IF NOT EXISTS current_sub_price INTEGER;
+      ALTER TABLE staged_rates ADD COLUMN IF NOT EXISTS staged_sub_price INTEGER;
+      ALTER TABLE staged_rates ADD COLUMN IF NOT EXISTS diff_sub_pence INTEGER;
     `);
   }
 

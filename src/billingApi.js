@@ -92,7 +92,21 @@ class BillingApiClient {
     });
   }
 
-  // 7. Update Customer Prices (POST /api/prices/update-customer-prices)
+  // 7. Fetch Customer Prices (GET /api/prices/customer-prices)
+  async getCustomerPrices(customerDcId, serviceId = null) {
+    let path = `/api/prices/customer-prices?customer_dc_id=${encodeURIComponent(customerDcId)}`;
+    if (serviceId) path += `&service_id=${encodeURIComponent(serviceId)}`;
+    return this.request(path);
+  }
+
+  // 8. Fetch My Cost Prices (GET /api/prices/my-prices)
+  async getMyPrices(serviceId = null) {
+    let path = `/api/prices/my-prices`;
+    if (serviceId) path += `?service_id=${encodeURIComponent(serviceId)}`;
+    return this.request(path);
+  }
+
+  // 9. Update Customer Prices (POST /api/prices/update-customer-prices)
   async updateCustomerPrices(customerDcId, prices) {
     const payload = {
       customer_dc_id: customerDcId,
@@ -101,7 +115,7 @@ class BillingApiClient {
         zone_id: Number(p.zone_id),
         weight_class_id: Number(p.weight_class_id),
         price: Math.round(Number(p.price)), // pence
-        sub_price: Math.round(Number(p.sub_price || 0))
+        sub_price: p.sub_price !== null && p.sub_price !== undefined ? Math.round(Number(p.sub_price)) : null
       }))
     };
     return this.request('/api/prices/update-customer-prices', {
@@ -110,7 +124,23 @@ class BillingApiClient {
     });
   }
 
-  // 8. Update Fuel Surcharges
+  // 10. Update My Cost Prices (POST /api/prices/update-my-prices)
+  async updateMyPrices(prices) {
+    return this.request('/api/prices/update-my-prices', {
+      method: 'POST',
+      body: {
+        prices: prices.map(p => ({
+          service_id: Number(p.service_id),
+          zone_id: Number(p.zone_id),
+          weight_class_id: Number(p.weight_class_id),
+          price: Math.round(Number(p.price)),
+          sub_price: p.sub_price !== null && p.sub_price !== undefined ? Math.round(Number(p.sub_price)) : null
+        }))
+      }
+    });
+  }
+
+  // 11. Update Fuel Surcharges
   async updateFuelSurcharges(customerDcId, prices) {
     return this.request('/api/prices/update-customer-fuel-surcharges', {
       method: 'POST',

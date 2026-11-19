@@ -150,8 +150,21 @@ class PricingScheduler {
         const newPricePence = Math.round(oldPricePence * (1 + appliedPct / 100)) + Math.round(appliedFixedPence);
         const diffPence = newPricePence - oldPricePence;
 
-        const oldSubPrice = Number(rate.current_sub_price_pence || 0);
-        const newSubPrice = Math.round(oldSubPrice * (1 + appliedPct / 100)) + (appliedFixedPence > 0 ? Math.round(appliedFixedPence) : 0);
+        const hasSub = rate.current_sub_price_pence !== null && rate.current_sub_price_pence !== undefined && !isNaN(rate.current_sub_price_pence);
+        let oldSubPrice = null;
+        let newSubPrice = null;
+        let diffSubPence = 0;
+
+        if (hasSub) {
+          oldSubPrice = Number(rate.current_sub_price_pence);
+          if (oldSubPrice > 0) {
+            newSubPrice = Math.round(oldSubPrice * (1 + appliedPct / 100)) + (appliedFixedPence > 0 ? Math.round(appliedFixedPence) : 0);
+            diffSubPence = newSubPrice - oldSubPrice;
+          } else {
+            newSubPrice = 0;
+            diffSubPence = 0;
+          }
+        }
 
         calculatedList.push({
           customer_dc_id: c.dc_id,
@@ -168,6 +181,7 @@ class PricingScheduler {
           diff_pence: diffPence,
           old_sub_price: oldSubPrice,
           new_sub_price: newSubPrice,
+          diff_sub_pence: diffSubPence,
           applied_percent: appliedPct,
           applied_fixed_pence: appliedFixedPence,
           exemption_reason: exemptionReason,
@@ -224,7 +238,7 @@ class PricingScheduler {
         this.progress.current = i + 1;
 
         // Skip customers where increase is 0% across all rates
-        const hasIncreases = custRates.some(r => r.diff_pence > 0);
+        const hasIncreases = custRates.some(r => r.diff_pence > 0 || (r.diff_sub_pence && r.diff_sub_pence > 0));
         if (!hasIncreases) {
           this.progress.success++;
           await db.query(

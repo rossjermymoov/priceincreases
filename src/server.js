@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const db = require('./db');
 const billingApi = require('./billingApi');
 const scheduler = require('./scheduler');
@@ -204,7 +205,7 @@ app.post('/api/customers/:dcId/rates', async (req, res) => {
           Number(r.weight_class_id || 17516),
           r.weight_band || 'Standard',
           Math.round(Number(r.price)),
-          Math.round(Number(r.sub_price || 0))
+          (r.sub_price !== null && r.sub_price !== undefined && !isNaN(r.sub_price) && Number(r.sub_price) > 0) ? Math.round(Number(r.sub_price)) : null
         ]);
       }
     }
@@ -496,6 +497,16 @@ async function handleSandboxPushRates(req, res) {
       });
     }
 
+    if (pricesToPush && Array.isArray(pricesToPush)) {
+      pricesToPush = pricesToPush.map(p => ({
+        service_id: Number(p.service_id),
+        zone_id: Number(p.zone_id),
+        weight_class_id: Number(p.weight_class_id),
+        price: Math.round(Number(p.price)),
+        sub_price: (p.sub_price !== null && p.sub_price !== undefined && !isNaN(p.sub_price)) ? Math.round(Number(p.sub_price)) : null
+      }));
+    }
+
     if (!pricesToPush || !Array.isArray(pricesToPush) || pricesToPush.length === 0) {
       // Calculate rates for this customer from our rules engine
       let calculated = await scheduler.calculateCustomerRates(testDcId);
@@ -516,8 +527,8 @@ async function handleSandboxPushRates(req, res) {
         service_id: Number(r.service_id),
         zone_id: Number(r.zone_id),
         weight_class_id: Number(r.weight_class_id),
-        price: Number(r.new_price),
-        sub_price: Number(r.new_sub_price)
+        price: Math.round(Number(r.new_price)),
+        sub_price: (r.new_sub_price !== null && r.new_sub_price !== undefined && !isNaN(r.new_sub_price)) ? Math.round(Number(r.new_sub_price)) : null
       }));
     }
 
@@ -638,6 +649,9 @@ app.post('/api/staging/generate', async (req, res) => {
       current_price: r.old_price,
       staged_price: r.new_price,
       diff_pence: r.diff_pence,
+      current_sub_price: r.old_sub_price,
+      staged_sub_price: r.new_sub_price,
+      diff_sub_pence: r.diff_sub_pence,
       applied_percent: r.applied_percent,
       is_exempt: r.is_exempt ? 1 : 0,
       exemption_reason: r.exemption_reason || null
@@ -648,8 +662,8 @@ app.post('/api/staging/generate', async (req, res) => {
     } else {
       for (const r of stagedList) {
         await db.query(
-          'INSERT INTO staged_rates (customer_dc_id, customer_name, service_id, service_name, courier_code, zone_id, zone_name, weight_class_id, weight_band, current_price, staged_price, diff_pence, applied_percent, is_exempt, exemption_reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)',
-          [r.customer_dc_id, r.customer_name, r.service_id, r.service_name, r.courier_code, r.zone_id, r.zone_name, r.weight_class_id, r.weight_band, r.current_price, r.staged_price, r.diff_pence, r.applied_percent, r.is_exempt, r.exemption_reason]
+          'INSERT INTO staged_rates (customer_dc_id, customer_name, service_id, service_name, courier_code, zone_id, zone_name, weight_class_id, weight_band, current_price, staged_price, diff_pence, current_sub_price, staged_sub_price, diff_sub_pence, applied_percent, is_exempt, exemption_reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)',
+          [r.customer_dc_id, r.customer_name, r.service_id, r.service_name, r.courier_code, r.zone_id, r.zone_name, r.weight_class_id, r.weight_band, r.current_price, r.staged_price, r.diff_pence, r.current_sub_price, r.staged_sub_price, r.diff_sub_pence, r.applied_percent, r.is_exempt, r.exemption_reason]
         );
       }
     }
@@ -719,6 +733,9 @@ app.get('/api/staging/customer-rates', async (req, res) => {
         current_price: r.old_price,
         staged_price: r.new_price,
         diff_pence: r.diff_pence,
+        current_sub_price: r.old_sub_price,
+        staged_sub_price: r.new_sub_price,
+        diff_sub_pence: r.diff_sub_pence,
         applied_percent: r.applied_percent,
         is_exempt: r.is_exempt ? 1 : 0,
         exemption_reason: r.exemption_reason || null
@@ -823,20 +840,31 @@ app.get('/api/audit-logs', async (req, res) => {
 app.get('/api/export-csv', async (req, res) => {
   try {
     const rates = await scheduler.calculateCustomerRates();
-    const headers = ['Customer DC ID', 'Customer Name', 'Carrier', 'Service Name', 'Zone', 'Weight Band', 'Old Price (£)', 'New Price (£)', 'Diff (£)', 'Increase %', 'Exempt Reason'];
-    const rows = rates.map(r => [
-      `"${r.customer_dc_id}"`,
-      `"${r.customer_name}"`,
-      `"${r.courier_code}"`,
-      `"${r.service_name}"`,
-      `"${r.zone_name}"`,
-      `"${r.weight_band}"`,
-      (r.old_price / 100).toFixed(2),
-      (r.new_price / 100).toFixed(2),
-      (r.diff_pence / 100).toFixed(2),
-      r.applied_percent + '%',
-      `"${r.exemption_reason || 'Eligible'}"`
-    ]);
+    const headers = [
+      'Customer DC ID', 'Customer Name', 'Carrier', 'Service Name', 'Zone', 'Weight Band',
+      '1st Box Live (£)', '1st Box Future (£)', '1st Box Diff (£)',
+      'Sub Box Live (£)', 'Sub Box Future (£)', 'Sub Box Diff (£)',
+      'Increase %', 'Exempt Reason'
+    ];
+    const rows = rates.map(r => {
+      const hasSub = r.old_sub_price !== null && r.old_sub_price !== undefined && Number(r.old_sub_price) > 0;
+      return [
+        `"${r.customer_dc_id}"`,
+        `"${r.customer_name}"`,
+        `"${r.courier_code}"`,
+        `"${r.service_name}"`,
+        `"${r.zone_name}"`,
+        `"${r.weight_band}"`,
+        (r.old_price / 100).toFixed(2),
+        (r.new_price / 100).toFixed(2),
+        (r.diff_pence / 100).toFixed(2),
+        hasSub ? (r.old_sub_price / 100).toFixed(2) : '—',
+        hasSub ? (r.new_sub_price / 100).toFixed(2) : '—',
+        hasSub ? (r.diff_sub_pence / 100).toFixed(2) : '—',
+        r.applied_percent + '%',
+        `"${r.exemption_reason || 'Eligible'}"`
+      ];
+    });
 
     const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     res.setHeader('Content-Type', 'text/csv');
@@ -844,6 +872,73 @@ app.get('/api/export-csv', async (req, res) => {
     res.send(csvContent);
   } catch (err) {
     res.status(500).send('Failed to generate CSV: ' + err.message);
+  }
+});
+
+// 10. Live Rate Sync Endpoints
+app.post('/api/customers/:dcId/sync-rates', async (req, res) => {
+  try {
+    const { dcId } = req.params;
+    const couriers = await db.query('SELECT * FROM couriers');
+    const services = await db.query('SELECT * FROM courier_services');
+    const courierMap = new Map();
+    couriers.forEach(c => courierMap.set(c.id, c.code));
+    const serviceToCourier = new Map();
+    services.forEach(s => serviceToCourier.set(s.id, courierMap.get(s.courier_id) || 'UNKNOWN'));
+
+    const liveRes = await billingApi.getCustomerPrices(dcId);
+    const list = liveRes.prices || [];
+
+    if (db.dbDriver === 'json-store') {
+      const allRates = (await db.query('SELECT * FROM customer_rates')).filter(r => r.customer_dc_id !== dcId);
+      let idCounter = allRates.length + 1;
+      for (const p of list) {
+        const courierCode = serviceToCourier.get(p.service_id) || 'OTHER';
+        const hasSub = p.sub_price !== null && p.sub_price !== undefined;
+        allRates.push({
+          id: idCounter++,
+          customer_dc_id: dcId,
+          courier_code: courierCode,
+          service_id: Number(p.service_id),
+          service_name: p.service_name || '',
+          zone_id: Number(p.zone_id),
+          zone_name: p.zone_name || '',
+          weight_class_id: Number(p.weight_class_id),
+          weight_band: p.weight_class_name || '',
+          current_price_pence: Math.round(Number(p.price || 0)),
+          current_sub_price_pence: hasSub ? Math.round(Number(p.sub_price)) : null
+        });
+      }
+      const storePath = path.join(__dirname, '../data/store.json');
+      const storeData = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+      storeData.customer_rates = allRates;
+      fs.writeFileSync(storePath, JSON.stringify(storeData, null, 2), 'utf8');
+    } else {
+      await db.query('DELETE FROM customer_rates WHERE customer_dc_id = $1', [dcId]);
+      for (const p of list) {
+        const courierCode = serviceToCourier.get(p.service_id) || 'OTHER';
+        const hasSub = p.sub_price !== null && p.sub_price !== undefined;
+        await db.query(
+          'INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+          [dcId, courierCode, Number(p.service_id), p.service_name || '', Number(p.zone_id), p.zone_name || '', Number(p.weight_class_id), p.weight_class_name || '', Math.round(Number(p.price || 0)), hasSub ? Math.round(Number(p.sub_price)) : null]
+        );
+      }
+    }
+
+    const calculated = await scheduler.calculateCustomerRates(dcId);
+    res.json({ success: true, count: list.length, rates: calculated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/rates/sync-live-billing', async (req, res) => {
+  try {
+    const { syncAllCustomerPrices } = require('../scripts/sync_live_rates');
+    const result = await syncAllCustomerPrices();
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
