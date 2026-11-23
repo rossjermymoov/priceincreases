@@ -103,6 +103,7 @@
       border-radius: 0.8rem;
       overflow: hidden;
       flex-shrink: 0;
+      background: #ffffff;
       box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08);
       transition: transform 0.18s ease;
     }
@@ -124,6 +125,7 @@
       border-radius: 0.45rem;
       overflow: hidden;
       flex-shrink: 0;
+      background: #ffffff;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.08);
     }
     .dark .carrier-logo-sm {
@@ -318,7 +320,7 @@
   <!-- ========================================== -->
   <div class="flex items-center gap-1.5 p-1 bg-slate-200/70 dark:bg-slate-800/80 rounded-2xl mb-7 max-w-2xl border border-slate-300/50 dark:border-slate-700/50">
     <button onclick="setTab('rules')" id="tab-btn-rules" class="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition shadow-sm bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300">
-      1. Courier % Markups
+      1. Courier % Increases
     </button>
     <button onclick="setTab('customers')" id="tab-btn-customers" class="flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center justify-center gap-2">
       <span>2. Customer Directory</span>
@@ -333,48 +335,80 @@
   <!-- TAB 1: COURIER BASE % INCREASES            -->
   <!-- ========================================== -->
   <div id="tab-rules" class="space-y-6">
-    <div class="glass-card p-6 space-y-5">
+    <div class="glass-card p-6 sm:p-7 space-y-6">
       <!-- Title & Global Controls -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-        <div>
-          <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <span>🚚</span> Courier Price Increase Rules
-          </h2>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Configure individual percentage increases (%) per courier, or set a uniform rate across all couriers.</p>
-        </div>
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/60 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-            <span class="text-slate-500 dark:text-slate-400 font-medium">Introductory Cutoff:</span>
-            <input type="date" id="cutoff-date-input" value="2026-09-01" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-0.5 text-xs font-mono font-semibold">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-200/80 dark:border-slate-800/90">
+        <div class="flex items-start gap-3.5 min-w-0">
+          <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 border border-indigo-200/70 dark:border-indigo-400/25 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/>
+            </svg>
           </div>
-          <button onclick="saveRules()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-md shadow-indigo-600/20 flex items-center gap-1.5">
-            <span>💾</span> Save All Rates
+          <div class="min-w-0">
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <h2 class="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">Courier Price Increase Rules</h2>
+              <span id="rules-summary-pill" class="text-[11px] font-semibold font-mono px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80">12 Carriers</span>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Configure individual percentage increases per carrier, toggle active scope, or apply a uniform adjustment across the network.</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2.5 shrink-0">
+          <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700/80 text-xs whitespace-nowrap">
+            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/>
+            </svg>
+            <span class="text-slate-500 dark:text-slate-400 font-medium">Intro Cutoff:</span>
+            <input type="date" id="cutoff-date-input" value="2026-09-01" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-600/80 rounded-lg px-2 py-0.5 text-xs font-mono font-semibold focus:outline-none focus:border-indigo-500">
+          </div>
+          <button onclick="saveRules()" id="btn-save-rules" class="bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/25 flex items-center gap-2 whitespace-nowrap">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+            </svg>
+            <span id="btn-save-rules-label">Save All Rates</span>
           </button>
         </div>
       </div>
 
       <!-- Quick Global Percentage Toolbar -->
-      <div class="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
-        <div class="flex items-center gap-2.5">
-          <span class="text-slate-700 dark:text-slate-200 font-bold">⚡ Quick Uniform % Mark:</span>
-          <div class="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm">
-            <input type="number" id="quick-fixed-pct" min="0" max="30" step="0.1" value="3.5" class="w-14 bg-transparent text-indigo-600 dark:text-indigo-400 font-mono font-bold text-xs text-right focus:outline-none">
-            <span class="text-slate-400 font-mono">%</span>
-            <button onclick="applyFixedPercentageToAll()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-md text-xs font-bold transition ml-1 shadow-sm">
-              Apply to All Couriers
+      <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-slate-50/90 dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/90 text-xs">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-1.5 text-slate-700 dark:text-slate-200 font-bold">
+            <svg class="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+            </svg>
+            <span>Quick Uniform Increase</span>
+          </div>
+
+          <div class="flex items-center gap-1.5 bg-white dark:bg-slate-800/90 p-1 pl-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-xs focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition">
+            <input type="number" id="quick-fixed-pct" min="0" max="30" step="0.1" value="3.5" class="w-12 bg-transparent text-indigo-600 dark:text-indigo-400 font-mono font-bold text-xs text-right focus:outline-none">
+            <span class="text-slate-400 font-mono font-semibold pr-1">%</span>
+            <button onclick="applyFixedPercentageToAll()" class="bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs">
+              Apply to All
             </button>
+          </div>
+
+          <!-- One-click preset chips -->
+          <div class="hidden sm:flex items-center gap-1.5 pl-1 border-l border-slate-200 dark:border-slate-700/70">
+            <span class="text-[11px] text-slate-400 font-medium mr-0.5">Presets:</span>
+            <button type="button" onclick="setQuickUniformPreset(2.0)" class="px-2 py-1 rounded-lg font-mono font-semibold text-[11px] bg-white dark:bg-slate-800/80 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 border border-slate-200 dark:border-slate-700/80 transition">2.0%</button>
+            <button type="button" onclick="setQuickUniformPreset(3.0)" class="px-2 py-1 rounded-lg font-mono font-semibold text-[11px] bg-white dark:bg-slate-800/80 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 border border-slate-200 dark:border-slate-700/80 transition">3.0%</button>
+            <button type="button" onclick="setQuickUniformPreset(3.5)" class="px-2 py-1 rounded-lg font-mono font-semibold text-[11px] bg-white dark:bg-slate-800/80 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 border border-slate-200 dark:border-slate-700/80 transition">3.5%</button>
+            <button type="button" onclick="setQuickUniformPreset(5.0)" class="px-2 py-1 rounded-lg font-mono font-semibold text-[11px] bg-white dark:bg-slate-800/80 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 border border-slate-200 dark:border-slate-700/80 transition">5.0%</button>
           </div>
         </div>
 
         <div class="flex items-center gap-2">
-          <button onclick="resetRulesToDefaults()" class="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-white px-3 py-1.5 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-800 transition font-medium">
-            ↺ Reset Defaults
+          <button onclick="resetRulesToDefaults()" class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white px-3 py-1.5 rounded-xl hover:bg-slate-200/60 dark:hover:bg-slate-800 transition font-semibold">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182"/>
+            </svg>
+            Reset Defaults
           </button>
         </div>
       </div>
 
       <!-- Courier Cards Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-1" id="carrier-rules-container">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="carrier-rules-container">
         <!-- Rendered dynamically -->
       </div>
     </div>
@@ -1170,21 +1204,79 @@
       const n = (name || '').toLowerCase();
       const c = (code || '').toLowerCase();
 
-      if (n.includes('dpd') || c === 'dpd') return { name: 'DPD', logo: '/logos/dpd.svg', bg: 'bg-[#dc2626]', text: 'text-white' };
-      if (n.includes('yodel') || c.includes('yod')) return { name: 'Yodel', logo: '/logos/yodel.svg', bg: 'bg-[#0284c7]', text: 'text-white' };
-      if (n.includes('royal mail') || c === 'rm') return { name: 'Royal Mail', logo: '/logos/royalmail.svg', bg: 'bg-[#dc2626]', text: 'text-white' };
-      if (n.includes('evri') || c.includes('evri')) return { name: 'EvRi', logo: '/logos/evri.png', bg: 'bg-white', text: 'text-slate-900' };
+      if (n.includes('dpd') || c === 'dpd')
+        return { name: 'DPD', logo: '/logos/dpd.svg', accent: '#D30032', tag: 'Express' };
+      if (n.includes('yodel') || c.includes('yod'))
+        return { name: n.includes('c2c') || c.includes('c2c') ? 'Yodel C2C' : 'Yodel', logo: '/logos/yodel.svg', accent: '#99CC00', tag: 'Parcel' };
+      if (n.includes('royal mail') || c === 'rm')
+        return { name: 'Royal Mail', logo: '/logos/royalmail.svg', accent: '#EE2722', tag: 'National' };
+      if (n.includes('evri') || c.includes('evri'))
+        return { name: 'EvRi', logo: '/logos/evri.svg', accent: '#3880CE', tag: 'Parcel' };
       if (n.includes('dhl') || c.includes('dhl')) {
-        const displayName = n.includes('c2c') ? 'DHL Ecom C2C' : 'DHL Ecommerce';
-        return { name: displayName, logo: '/logos/dhl.svg', bg: 'bg-[#fbbf24]', text: 'text-slate-900' };
+        const isC2C = n.includes('c2c') || c.includes('c2c');
+        return { name: isC2C ? 'DHL Ecom C2C' : 'DHL Ecommerce', logo: '/logos/dhl.svg', accent: '#FDCA2E', tag: isC2C ? 'C2C' : 'eCommerce' };
       }
-      if (n.includes('ups') || c.includes('ups')) return { name: 'UPS', logo: '/logos/ups.svg', bg: 'bg-[#78350f]', text: 'text-white' };
-      if (n.includes('inpost') || c.includes('inpost')) return { name: 'InPost', logo: '/logos/inpost.svg', bg: 'bg-[#f59e0b]', text: 'text-slate-900' };
-      if (n.includes('pro carrier') || c === 'pc') return { name: 'Pro Carrier', logo: null, bg: 'bg-amber-700', text: 'text-white' };
-      if (n.includes('agl') || c === 'agl') return { name: 'AGL', logo: null, bg: 'bg-blue-600', text: 'text-white' };
-      if (n.includes('ppi') || c === 'ppi') return { name: 'PPI', logo: null, bg: 'bg-emerald-700', text: 'text-white' };
-      if (n.includes('api test') || c.includes('api test')) return { name: 'API TEST', logo: null, bg: 'bg-slate-600', text: 'text-white' };
-      return { name: name || code, logo: null, bg: 'bg-slate-700', text: 'text-white' };
+      if (n.includes('ups') || c.includes('ups'))
+        return { name: 'UPS', logo: '/logos/ups.svg', accent: '#FFB500', tag: 'Global' };
+      if (n.includes('inpost') || c.includes('inpost'))
+        return { name: 'InPost', logo: '/logos/inpost.svg', accent: '#F7CD46', tag: 'Locker' };
+      if (n.includes('pro carrier') || c === 'pc')
+        return { name: 'Pro Carrier', logo: '/logos/procarrier.svg', accent: '#3AB9B9', tag: 'International' };
+      if (n.includes('agl') || c === 'agl')
+        return { name: 'AGL', logo: '/logos/agl.png', accent: '#E8611A', tag: 'Logistics' };
+      if (n.includes('ppi') || c === 'ppi')
+        return { name: 'PPI', logo: '/logos/ppi.svg', accent: '#10B981', tag: 'Postage' };
+      if (n.includes('api test') || c.includes('api test'))
+        return { name: 'API TEST', logo: '/logos/apitest.svg', accent: '#64748B', tag: 'Sandbox', isSandbox: true };
+      return { name: name || code, logo: null, accent: '#6366F1', tag: 'Carrier' };
+    }
+
+    function updateRulesSummaryPill() {
+      const pill = document.getElementById('rules-summary-pill');
+      if (!pill || !rulesData.length) return;
+      let activeCount = 0;
+      let sumPct = 0;
+      let prodCount = 0;
+      rulesData.forEach(r => {
+        const activeEl = document.getElementById('active-' + r.id);
+        const numEl = document.getElementById('num-' + r.id);
+        const isActive = activeEl ? activeEl.checked : r.active !== 0;
+        const pct = numEl ? (parseFloat(numEl.value) || 0) : (r.increase_percent || 0);
+        if (isActive) activeCount++;
+        if (r.carrier_code !== 'API TEST' && isActive) {
+          sumPct += pct;
+          prodCount++;
+        }
+      });
+      const avg = prodCount > 0 ? (sumPct / prodCount).toFixed(1) : '0.0';
+      pill.textContent = `${activeCount}/${rulesData.length} Active · Avg +${avg}%`;
+    }
+
+    function syncRuleCardVisual(id, accent) {
+      const card = document.getElementById('carrier-card-' + id);
+      const numEl = document.getElementById('num-' + id);
+      const activeEl = document.getElementById('active-' + id);
+      const statusLabel = document.getElementById('status-label-' + id);
+      const bar = document.getElementById('bar-' + id);
+      const topStrip = document.getElementById('accent-strip-' + id);
+
+      const isActive = activeEl ? activeEl.checked : true;
+      const pct = Math.max(0, Math.min(30, parseFloat(numEl?.value) || 0));
+
+      if (card) card.classList.toggle('is-paused', !isActive);
+      if (topStrip) topStrip.style.backgroundColor = isActive ? accent : '#475569';
+      if (statusLabel) {
+        statusLabel.textContent = isActive ? 'Active' : 'Paused';
+        statusLabel.className = isActive
+          ? 'text-[11px] font-semibold text-emerald-600 dark:text-emerald-400'
+          : 'text-[11px] font-semibold text-slate-400 dark:text-slate-500';
+      }
+      if (bar) {
+        const widthPct = Math.min(100, (pct / 10) * 100);
+        bar.style.width = `${widthPct}%`;
+        bar.style.backgroundColor = !isActive ? '#64748b' : (pct === 0 ? '#64748b' : accent);
+      }
+      updateRulesSummaryPill();
     }
 
     async function loadRules() {
@@ -1200,55 +1292,103 @@
         if (!container) return;
         container.innerHTML = '';
 
-        rulesData.forEach(r => {
+        // Keep production couriers sorted alphabetically, with API TEST neatly placed at the end
+        const sortedRules = [...rulesData].sort((a, b) => {
+          const aTest = (a.carrier_code || '').toUpperCase() === 'API TEST' ? 1 : 0;
+          const bTest = (b.carrier_code || '').toUpperCase() === 'API TEST' ? 1 : 0;
+          if (aTest !== bTest) return aTest - bTest;
+          return (a.carrier_name || '').localeCompare(b.carrier_name || '');
+        });
+
+        sortedRules.forEach(r => {
           const info = getCarrierInfo(r.carrier_name, r.carrier_code);
-          const div = document.createElement('div');
-          div.className = 'p-4 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between gap-3 transition shadow-sm hover:shadow-md';
           const isActive = r.active !== 0;
+          const pctVal = Number(r.increase_percent || 0);
+          const barWidth = Math.min(100, (pctVal / 10) * 100);
+
+          const div = document.createElement('div');
+          div.id = `carrier-card-${r.id}`;
+          div.className = `carrier-card flex flex-col justify-between ${!isActive ? 'is-paused' : ''}`;
 
           div.innerHTML = `
-            <div class="flex items-center justify-between gap-3">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-12 h-8 ${info.bg} rounded-xl flex items-center justify-center p-1 shadow-sm border border-slate-200/50 dark:border-slate-700 overflow-hidden flex-shrink-0">
-                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-full max-w-full object-contain" />` : `<span class="font-extrabold text-[11px] ${info.text}">${info.name}</span>`}
-                </div>
-                <div class="min-w-0">
-                  <div class="font-bold text-xs text-slate-900 dark:text-white truncate">${info.name}</div>
-                  <div class="text-[10px] text-slate-400 font-mono">${r.carrier_code || ''}</div>
-                </div>
-              </div>
-              <label class="flex items-center gap-1.5 cursor-pointer text-xs">
-                <input type="checkbox" id="active-${r.id}" ${isActive ? 'checked' : ''} class="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-0">
-                <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Active</span>
-              </label>
-            </div>
+            <!-- Brand top accent hairline -->
+            <div id="accent-strip-${r.id}" class="h-[3px] w-full transition-colors duration-200" style="background-color: ${isActive ? info.accent : '#475569'};"></div>
 
-            <div class="pt-2.5 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-3">
-              <span class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Rate Increase:</span>
-              <div class="flex items-center gap-1.5">
-                <button type="button" onclick="nudgePct(${r.id}, -0.5)" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center transition border border-slate-200 dark:border-slate-600 select-none">-</button>
-                <div class="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5 shadow-inner">
-                  <input type="number" min="0" max="30" step="0.1" value="${r.increase_percent || 0}" id="num-${r.id}" 
-                         class="w-12 bg-transparent text-indigo-600 dark:text-indigo-400 font-mono font-bold text-xs text-right focus:outline-none">
-                  <span class="text-xs text-slate-400 font-mono font-semibold">%</span>
+            <div class="p-4 flex flex-col justify-between gap-4 flex-1">
+              <!-- Header row: Crisp 48x48 Square Logo Tile + Identity + Toggle -->
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3.5 min-w-0">
+                  <div class="carrier-logo-tile">
+                    ${info.logo
+                      ? `<img src="${info.logo}" alt="${info.name}" loading="lazy" />`
+                      : `<div class="w-full h-full flex items-center justify-center bg-slate-700 text-white font-extrabold text-xs">${(info.name || '').slice(0, 3).toUpperCase()}</div>`}
+                  </div>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-1.5">
+                      <span class="font-bold text-[14px] tracking-tight text-slate-900 dark:text-white truncate">${info.name}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 mt-1">
+                      <span class="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800/90 text-slate-500 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700/70">${r.carrier_code || ''}</span>
+                      <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${info.isSandbox ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25' : 'text-slate-400 dark:text-slate-500'}">${info.tag}</span>
+                    </div>
+                  </div>
                 </div>
-                <button type="button" onclick="nudgePct(${r.id}, 0.5)" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center transition border border-slate-200 dark:border-slate-600 select-none">+</button>
+
+                <!-- Sleek Pill Toggle -->
+                <label class="flex flex-col items-end gap-1 cursor-pointer select-none shrink-0" title="Toggle carrier active status">
+                  <input type="checkbox" id="active-${r.id}" ${isActive ? 'checked' : ''} onchange="syncRuleCardVisual(${r.id}, '${info.accent}')" class="sr-only">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                  <span id="status-label-${r.id}" class="text-[11px] font-semibold ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}">${isActive ? 'Active' : 'Paused'}</span>
+                </label>
+              </div>
+
+              <!-- Rate Increase Control Well -->
+              <div class="bg-slate-50/90 dark:bg-slate-900/75 rounded-xl p-3 border border-slate-200/70 dark:border-slate-800/90 space-y-2.5">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Increase</span>
+
+                  <!-- Joined Segmented Stepper -->
+                  <div class="inline-flex items-center bg-white dark:bg-slate-800/90 rounded-lg border border-slate-200 dark:border-slate-700/90 shadow-2xs focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/25 transition overflow-hidden">
+                    <button type="button" onclick="nudgePct(${r.id}, -0.5, '${info.accent}')" class="w-7 h-7 flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white font-bold text-sm transition select-none" aria-label="Decrease percentage">−</button>
+                    <div class="flex items-center px-1.5 border-x border-slate-200/80 dark:border-slate-700/80">
+                      <input type="number" min="0" max="30" step="0.1" value="${pctVal}" id="num-${r.id}"
+                             oninput="syncRuleCardVisual(${r.id}, '${info.accent}')"
+                             class="w-11 bg-transparent text-slate-900 dark:text-white font-mono font-bold text-xs text-right focus:outline-none">
+                      <span class="text-[11px] text-slate-400 font-mono font-semibold ml-0.5">%</span>
+                    </div>
+                    <button type="button" onclick="nudgePct(${r.id}, 0.5, '${info.accent}')" class="w-7 h-7 flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white font-bold text-sm transition select-none" aria-label="Increase percentage">+</button>
+                  </div>
+                </div>
+
+                <!-- Visual Intensity Track (0% – 10% scale) -->
+                <div class="h-1 w-full bg-slate-200/80 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div id="bar-${r.id}" class="h-full rounded-full transition-all duration-200" style="width: ${barWidth}%; background-color: ${!isActive || pctVal === 0 ? '#64748b' : info.accent};"></div>
+                </div>
               </div>
             </div>
           `;
           container.appendChild(div);
         });
+
+        updateRulesSummaryPill();
       } catch (e) {
         console.error('Error loading rules:', e);
       }
     }
 
-    function nudgePct(id, delta) {
+    function nudgePct(id, delta, accent) {
       const num = document.getElementById('num-' + id);
       if (!num) return;
       let val = parseFloat(num.value) || 0;
       val = Math.max(0, Math.min(30, Math.round((val + delta) * 10) / 10));
       num.value = val;
+      if (accent) syncRuleCardVisual(id, accent);
+    }
+
+    function setQuickUniformPreset(val) {
+      const input = document.getElementById('quick-fixed-pct');
+      if (input) input.value = val;
+      applyFixedPercentageToAll();
     }
 
     async function applyFixedPercentageToAll() {
@@ -1349,9 +1489,22 @@
           body: JSON.stringify({ rules: updatedRules, cutoffDate: cutoff })
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
+        await loadRules();
         await loadStatus();
         if (document.getElementById('sandbox-customer-select')) {
           await loadSandboxRates();
+        }
+        const saveBtn = document.getElementById('btn-save-rules');
+        const saveLbl = document.getElementById('btn-save-rules-label');
+        if (saveBtn && saveLbl) {
+          saveBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+          saveBtn.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+          saveLbl.textContent = 'Rates Saved!';
+          setTimeout(() => {
+            saveBtn.classList.remove('bg-emerald-600', 'hover:bg-emerald-500');
+            saveBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+            saveLbl.textContent = 'Save All Rates';
+          }, 1800);
         }
       } catch (err) {
         alert('Failed to save rules: ' + err.message);
@@ -1643,9 +1796,9 @@
           return `
           <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
             <td class="p-3 font-semibold text-slate-900 dark:text-white font-sans">
-              <div class="flex items-center gap-2">
-                <div class="w-8 h-6 flex-shrink-0 flex items-center justify-center p-0.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-2xs">
-                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-4 max-w-full object-contain">` : `<span class="text-[9px] font-bold text-slate-500 font-mono">${info.name}</span>`}
+              <div class="flex items-center gap-2.5">
+                <div class="carrier-logo-sm">
+                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" loading="lazy">` : `<div class="w-full h-full flex items-center justify-center bg-slate-700 text-[9px] font-bold text-white font-mono">${info.name.slice(0,3)}</div>`}
                 </div>
                 <span>${r.service_name}</span>
               </div>
@@ -1839,9 +1992,9 @@
 
           tr.innerHTML = `
             <td class="p-2.5">
-              <div class="flex items-center gap-2">
-                <div class="w-8 h-6 flex-shrink-0 flex items-center justify-center p-0.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-2xs">
-                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" class="max-h-4 max-w-full object-contain">` : `<span class="text-[9px] font-bold text-slate-500 font-mono">${info.name}</span>`}
+              <div class="flex items-center gap-2.5">
+                <div class="carrier-logo-sm">
+                  ${info.logo ? `<img src="${info.logo}" alt="${info.name}" loading="lazy">` : `<div class="w-full h-full flex items-center justify-center bg-slate-700 text-[9px] font-bold text-white font-mono">${info.name.slice(0,3)}</div>`}
                 </div>
                 <span class="font-bold text-xs text-slate-900 dark:text-white whitespace-nowrap">${info.name}</span>
               </div>

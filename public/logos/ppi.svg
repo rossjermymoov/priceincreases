@@ -6,14 +6,10 @@
     </linearGradient>
   </defs>
   <rect width="512" height="512" fill="url(#ppi-bg)"/>
-  <!-- Crisp Postage Impression Stamp Frame -->
-  <rect x="44" y="44" width="424" height="424" rx="36" fill="none" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="10" stroke-dasharray="22 14"/>
-  <!-- Franking waves top -->
-  <g stroke="#6EE7B7" stroke-width="14" stroke-linecap="round" fill="none">
-    <path d="M108 134 Q146 110 184 134 T260 134 T336 134 T404 134"/>
-    <path d="M108 172 Q146 148 184 172 T260 172 T336 172 T404 172" stroke-opacity="0.65"/>
+  <rect x="44" y="44" width="424" height="424" rx="40" fill="none" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="12" stroke-dasharray="26 16"/>
+  <g stroke="#6EE7B7" stroke-width="16" stroke-linecap="round" fill="none">
+    <path d="M112 152 Q148 126 184 152 T256 152 T328 152 T400 152"/>
+    <path d="M112 194 Q148 168 184 194 T256 194 T328 194 T400 194" stroke-opacity="0.65"/>
   </g>
-  <!-- Bold PPI stamp letters -->
-  <text x="256" y="344" text-anchor="middle" fill="#FFFFFF" font-family="'Plus Jakarta Sans', 'Inter', 'Segoe UI', Arial, sans-serif" font-weight="800" font-size="154" letter-spacing="10">PPI</text>
-  <text x="256" y="408" text-anchor="middle" fill="#A7F3D0" font-family="'Plus Jakarta Sans', 'Inter', 'Segoe UI', Arial, sans-serif" font-weight="700" font-size="34" letter-spacing="8">POSTAGE PAID</text>
+  <text x="256" y="374" text-anchor="middle" fill="#FFFFFF" font-family="'Plus Jakarta Sans', 'Inter', 'Segoe UI', Arial, sans-serif" font-weight="800" font-size="168" letter-spacing="8">PPI</text>
 </svg>
