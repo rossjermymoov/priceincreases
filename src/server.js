@@ -387,6 +387,18 @@ app.get('/api/rates/preview', async (req, res) => {
 
     let rates = await scheduler.calculateCustomerRates(customerDcId);
 
+    // Auto-pull live rates from Despatch Cloud Billing API when inspecting a customer with no local cached rates
+    if (customerDcId && rates.length === 0) {
+      try {
+        const synced = await syncCustomerRatesFromBillingApi(customerDcId);
+        if (synced.count > 0) {
+          rates = await scheduler.calculateCustomerRates(customerDcId);
+        }
+      } catch (syncErr) {
+        console.warn(`[RatesPreview] Live auto-sync fallback for "${customerDcId}" failed:`, syncErr.message);
+      }
+    }
+
     if (carrier) {
       rates = rates.filter(r => r.courier_code === carrier || (r.service_name && r.service_name.toLowerCase().includes(carrier.toLowerCase())));
     }
@@ -468,7 +480,12 @@ app.post('/api/sandbox/create-customer', async (req, res) => {
       : 'INSERT OR REPLACE INTO customers (dc_id, name, email, created_at, is_inactive_excluded, is_exempt) VALUES (?, ?, ?, ?, 0, 0)';
     await db.query(upsertCustSql, [rawDcId, rawName, req.body.email || 'testing@despatchcloud.com', new Date().toISOString()]);
 
-    // Ensure baseline sample rates are seeded for this customer across couriers
+    // Pull live rates for this customer from Billing API immediately
+    try {
+      await syncCustomerRatesFromBillingApi(rawDcId);
+    } catch (syncErr) {
+      console.warn(`[Sandbox] Live rate sync for "${rawDcId}" warning:`, syncErr.message);
+    }
     await ensureRatesForCustomers([{ dc_id: rawDcId, name: rawName }]);
 
     await db.query(
@@ -876,57 +893,46 @@ app.get('/api/export-csv', async (req, res) => {
 });
 
 // 10. Live Rate Sync Endpoints
+async function syncCustomerRatesFromBillingApi(dcId) {
+  const couriers = await db.query('SELECT * FROM couriers');
+  const services = await db.query('SELECT * FROM courier_services');
+  const courierMap = new Map();
+  couriers.forEach(c => courierMap.set(Number(c.id), c.code));
+  const serviceToCourier = new Map();
+  services.forEach(s => serviceToCourier.set(Number(s.id), courierMap.get(Number(s.courier_id)) || 'UNKNOWN'));
+
+  const liveRes = await billingApi.getCustomerPrices(dcId);
+  const list = Array.isArray(liveRes) ? liveRes : (liveRes?.prices || liveRes?.data || []);
+
+  const mapped = list.map(p => {
+    const courierCode = serviceToCourier.get(Number(p.service_id)) || p.courier_code || 'OTHER';
+    const hasSub = p.sub_price !== null && p.sub_price !== undefined && p.sub_price !== '';
+    return {
+      customer_dc_id: dcId,
+      courier_code: courierCode,
+      service_id: Number(p.service_id),
+      service_name: p.service_name || '',
+      zone_id: Number(p.zone_id),
+      zone_name: p.zone_name || '',
+      weight_class_id: Number(p.weight_class_id),
+      weight_band: p.weight_class_name || p.weight_band || '',
+      current_price_pence: Math.round(Number(p.price || 0)),
+      current_sub_price_pence: hasSub ? Math.round(Number(p.sub_price)) : null
+    };
+  });
+
+  if (mapped.length > 0) {
+    await db.replaceCustomerRates(dcId, mapped);
+  }
+  return { count: mapped.length, rates: mapped };
+}
+
 app.post('/api/customers/:dcId/sync-rates', async (req, res) => {
   try {
     const { dcId } = req.params;
-    const couriers = await db.query('SELECT * FROM couriers');
-    const services = await db.query('SELECT * FROM courier_services');
-    const courierMap = new Map();
-    couriers.forEach(c => courierMap.set(c.id, c.code));
-    const serviceToCourier = new Map();
-    services.forEach(s => serviceToCourier.set(s.id, courierMap.get(s.courier_id) || 'UNKNOWN'));
-
-    const liveRes = await billingApi.getCustomerPrices(dcId);
-    const list = liveRes.prices || [];
-
-    if (db.dbDriver === 'json-store') {
-      const allRates = (await db.query('SELECT * FROM customer_rates')).filter(r => r.customer_dc_id !== dcId);
-      let idCounter = allRates.length + 1;
-      for (const p of list) {
-        const courierCode = serviceToCourier.get(p.service_id) || 'OTHER';
-        const hasSub = p.sub_price !== null && p.sub_price !== undefined;
-        allRates.push({
-          id: idCounter++,
-          customer_dc_id: dcId,
-          courier_code: courierCode,
-          service_id: Number(p.service_id),
-          service_name: p.service_name || '',
-          zone_id: Number(p.zone_id),
-          zone_name: p.zone_name || '',
-          weight_class_id: Number(p.weight_class_id),
-          weight_band: p.weight_class_name || '',
-          current_price_pence: Math.round(Number(p.price || 0)),
-          current_sub_price_pence: hasSub ? Math.round(Number(p.sub_price)) : null
-        });
-      }
-      const storePath = path.join(__dirname, '../data/store.json');
-      const storeData = JSON.parse(fs.readFileSync(storePath, 'utf8'));
-      storeData.customer_rates = allRates;
-      fs.writeFileSync(storePath, JSON.stringify(storeData, null, 2), 'utf8');
-    } else {
-      await db.query('DELETE FROM customer_rates WHERE customer_dc_id = $1', [dcId]);
-      for (const p of list) {
-        const courierCode = serviceToCourier.get(p.service_id) || 'OTHER';
-        const hasSub = p.sub_price !== null && p.sub_price !== undefined;
-        await db.query(
-          'INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-          [dcId, courierCode, Number(p.service_id), p.service_name || '', Number(p.zone_id), p.zone_name || '', Number(p.weight_class_id), p.weight_class_name || '', Math.round(Number(p.price || 0)), hasSub ? Math.round(Number(p.sub_price)) : null]
-        );
-      }
-    }
-
+    const synced = await syncCustomerRatesFromBillingApi(dcId);
     const calculated = await scheduler.calculateCustomerRates(dcId);
-    res.json({ success: true, count: list.length, rates: calculated });
+    res.json({ success: true, count: synced.count, rates: calculated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -936,6 +942,7 @@ app.post('/api/rates/sync-live-billing', async (req, res) => {
   try {
     const { syncAllCustomerPrices } = require('../scripts/sync_live_rates');
     const result = await syncAllCustomerPrices();
+    db.reloadStore();
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1029,10 +1036,11 @@ async function auditCustomerInvoices(customers) {
 async function ensureRatesForCustomers(customers) {
   const existing = await db.query('SELECT count(*) as count FROM customer_rates');
   const count = Number(existing[0]?.count || 0);
-  if (count === 0) {
+  if (count === 0 && db.dbDriver === 'json-store') {
     console.log('[RateShift] Customer rates empty. Ingesting from prices.csv...');
     const { ingestPrices } = require('../scripts/ingest_prices');
     await ingestPrices();
+    db.reloadStore();
   }
 }
 
@@ -1040,6 +1048,7 @@ app.post('/api/rates/reload-csv', async (req, res) => {
   try {
     const { ingestPrices } = require('../scripts/ingest_prices');
     const count = await ingestPrices();
+    db.reloadStore();
     res.json({ success: true, count, message: `Successfully reloaded ${count} rates from prices.csv` });
   } catch (err) {
     res.status(500).json({ error: err.message });

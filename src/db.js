@@ -121,6 +121,9 @@ async function query(sql, params = []) {
   }
 
   if (lower.startsWith('select * from pricing_rules')) {
+    if (lower.includes('active = 1')) {
+      return store.data.pricing_rules.filter(r => r.active !== 0);
+    }
     return [...store.data.pricing_rules];
   }
 
@@ -205,10 +208,20 @@ async function query(sql, params = []) {
 
   if (lower.includes('insert') && lower.includes('customer_rates')) {
     const [customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence] = params;
-    const exists = store.data.customer_rates.some(
+    const existingIdx = store.data.customer_rates.findIndex(
       r => r.customer_dc_id === customer_dc_id && r.service_id === service_id && r.zone_id === zone_id && r.weight_class_id === weight_class_id
     );
-    if (!exists) {
+    if (existingIdx >= 0) {
+      store.data.customer_rates[existingIdx] = {
+        ...store.data.customer_rates[existingIdx],
+        courier_code: courier_code || store.data.customer_rates[existingIdx].courier_code,
+        service_name: service_name || store.data.customer_rates[existingIdx].service_name,
+        zone_name: zone_name || store.data.customer_rates[existingIdx].zone_name,
+        weight_band: weight_band || store.data.customer_rates[existingIdx].weight_band,
+        current_price_pence,
+        current_sub_price_pence
+      };
+    } else {
       store.data.customer_rates.push({
         id: store.data.customer_rates.length + 1,
         customer_dc_id,
@@ -222,8 +235,8 @@ async function query(sql, params = []) {
         current_price_pence,
         current_sub_price_pence
       });
-      store.save();
     }
+    store.save();
     return [];
   }
 
@@ -330,7 +343,7 @@ async function initDb() {
       console.log('[DB-PostgreSQL] Connection confirmed. Creating schema and indexes...');
       await query(`
       CREATE TABLE IF NOT EXISTS customers (
-        id SERIAL PRIMARY KEY,
+        id BIGSERIAL PRIMARY KEY,
         dc_id TEXT UNIQUE,
         name TEXT,
         email TEXT,
@@ -342,6 +355,7 @@ async function initDb() {
         total_invoices INTEGER DEFAULT 0,
         is_inactive_excluded INTEGER DEFAULT 0
       );
+      ALTER TABLE customers ALTER COLUMN id TYPE BIGINT;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_invoice_date TEXT;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS total_invoices INTEGER DEFAULT 0;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_inactive_excluded INTEGER DEFAULT 0;
@@ -424,12 +438,16 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_staged_rates_dc ON staged_rates (customer_dc_id);
     `);
 
-    // Auto-seed PostgreSQL on fresh creation
+    // Auto-seed PostgreSQL on fresh or partially-seeded creation (check customers AND customer_rates independently!)
     const custCountRow = await pool.query('SELECT count(*) as count FROM customers');
-    if (Number(custCountRow.rows[0]?.count || 0) === 0) {
+    const rateCountRow = await pool.query('SELECT count(*) as count FROM customer_rates');
+    const needsCustomers = Number(custCountRow.rows[0]?.count || 0) === 0;
+    const needsRates = Number(rateCountRow.rows[0]?.count || 0) === 0;
+
+    if (needsCustomers || needsRates) {
       const seedPath = path.join(__dirname, '../data/seed.json');
       if (fs.existsSync(seedPath)) {
-        console.log('[DB-PostgreSQL] Fresh database detected. Importing 71k+ live rates and customer accounts from seed.json...');
+        console.log(`[DB-PostgreSQL] Seeding missing data from seed.json (needsCustomers=${needsCustomers}, needsRates=${needsRates})...`);
         const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
         if (seed.couriers && seed.couriers.length > 0) {
           for (const cr of seed.couriers) {
@@ -444,12 +462,12 @@ async function initDb() {
         if (seed.customers && seed.customers.length > 0) {
           for (const c of seed.customers) {
             await pool.query(
-              'INSERT INTO customers (id, dc_id, name, email, created_at, billing_period, is_exempt, custom_increase_pct, last_invoice_date, total_invoices, is_inactive_excluded) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (dc_id) DO NOTHING',
-              [c.id || Date.now(), c.dc_id, c.name, c.email, c.created_at, c.billing_period || 'weekly', c.is_exempt || 0, c.custom_increase_pct || null, c.last_invoice_date || null, c.total_invoices || 0, c.is_inactive_excluded || 0]
+              'INSERT INTO customers (dc_id, name, email, created_at, billing_period, is_exempt, custom_increase_pct, last_invoice_date, total_invoices, is_inactive_excluded) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (dc_id) DO NOTHING',
+              [c.dc_id, c.name, c.email, c.created_at, c.billing_period || 'weekly', c.is_exempt || 0, c.custom_increase_pct || null, c.last_invoice_date || null, c.total_invoices || 0, c.is_inactive_excluded || 0]
             );
           }
         }
-        if (seed.customer_rates && seed.customer_rates.length > 0) {
+        if (needsRates && seed.customer_rates && seed.customer_rates.length > 0) {
           const chunkSize = 500;
           for (let i = 0; i < seed.customer_rates.length; i += chunkSize) {
             const chunk = seed.customer_rates.slice(i, i + chunkSize);
@@ -463,7 +481,7 @@ async function initDb() {
             await pool.query(`INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ${values.join(', ')} ON CONFLICT (customer_dc_id, service_id, zone_id, weight_class_id) DO NOTHING`, params);
           }
         }
-        console.log(`[DB-PostgreSQL] Successfully seeded ${seed.customers?.length || 0} customers and ${seed.customer_rates?.length || 0} rate cards into indexed PostgreSQL tables!`);
+        console.log(`[DB-PostgreSQL] Successfully verified/seeded ${seed.customers?.length || 0} customers and ${seed.customer_rates?.length || 0} rate cards into indexed PostgreSQL tables!`);
       }
     }
     } catch (err) {
@@ -503,8 +521,73 @@ async function initDb() {
   console.log(`[DB] Storage engine initialized: ${dbDriver.toUpperCase()}`);
 }
 
+async function replaceCustomerRates(dcId, ratesList) {
+  if (dbDriver === 'postgres') {
+    await pool.query('DELETE FROM customer_rates WHERE customer_dc_id = $1', [dcId]);
+    if (Array.isArray(ratesList) && ratesList.length > 0) {
+      const chunkSize = 500;
+      for (let i = 0; i < ratesList.length; i += chunkSize) {
+        const chunk = ratesList.slice(i, i + chunkSize);
+        const values = [];
+        const params = [];
+        let pIdx = 1;
+        for (const r of chunk) {
+          values.push(`($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`);
+          params.push(
+            dcId,
+            r.courier_code || 'OTHER',
+            Number(r.service_id),
+            r.service_name || '',
+            Number(r.zone_id),
+            r.zone_name || '',
+            Number(r.weight_class_id),
+            r.weight_band || '',
+            Math.round(Number(r.current_price_pence || 0)),
+            r.current_sub_price_pence !== null && r.current_sub_price_pence !== undefined ? Math.round(Number(r.current_sub_price_pence)) : null
+          );
+        }
+        await pool.query(
+          `INSERT INTO customer_rates (customer_dc_id, courier_code, service_id, service_name, zone_id, zone_name, weight_class_id, weight_band, current_price_pence, current_sub_price_pence) VALUES ${values.join(', ')} ON CONFLICT (customer_dc_id, service_id, zone_id, weight_class_id) DO UPDATE SET current_price_pence = EXCLUDED.current_price_pence, current_sub_price_pence = EXCLUDED.current_sub_price_pence`,
+          params
+        );
+      }
+    }
+    return ratesList.length;
+  }
+
+  // JSON-Store: update BOTH in-memory store.data AND persist to disk
+  const kept = (store.data.customer_rates || []).filter(r => r.customer_dc_id !== dcId);
+  let nextId = kept.reduce((max, r) => (r.id > max ? r.id : max), 0) + 1;
+  for (const r of ratesList) {
+    kept.push({
+      id: nextId++,
+      customer_dc_id: dcId,
+      courier_code: r.courier_code || 'OTHER',
+      service_id: Number(r.service_id),
+      service_name: r.service_name || '',
+      zone_id: Number(r.zone_id),
+      zone_name: r.zone_name || '',
+      weight_class_id: Number(r.weight_class_id),
+      weight_band: r.weight_band || '',
+      current_price_pence: Math.round(Number(r.current_price_pence || 0)),
+      current_sub_price_pence: r.current_sub_price_pence !== null && r.current_sub_price_pence !== undefined ? Math.round(Number(r.current_sub_price_pence)) : null
+    });
+  }
+  store.data.customer_rates = kept;
+  store.save();
+  return ratesList.length;
+}
+
+function reloadStore() {
+  if (dbDriver === 'json-store' && store) {
+    store.load();
+  }
+}
+
 module.exports = {
   dbDriver,
   query,
-  initDb
+  initDb,
+  replaceCustomerRates,
+  reloadStore
 };

@@ -93,6 +93,17 @@ class PricingScheduler {
     }
     const rates = await db.query(rateSql, rateParams);
 
+    if (customerDcId && customers.length === 0 && rates.length > 0) {
+      customers.push({
+        dc_id: customerDcId,
+        name: customerDcId,
+        is_exempt: 0,
+        is_inactive_excluded: 0,
+        custom_increase_pct: null,
+        created_at: null
+      });
+    }
+
     // Group rates by customer
     const ratesByCustomer = new Map();
     for (const r of rates) {
