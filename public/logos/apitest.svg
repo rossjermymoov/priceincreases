@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="test-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#test-bg)"/>
+  <!-- Subtle grid dots -->
+  <rect x="36" y="36" width="440" height="440" rx="34" fill="none" stroke="#94A3B8" stroke-opacity="0.22" stroke-width="6"/>
+  <!-- Crisp code brackets icon -->
+  <g stroke="#38BDF8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="178,150 116,204 178,258"/>
+    <polyline points="334,150 396,204 334,258"/>
+    <line x1="278" y1="136" x2="234" y2="272" stroke="#818CF8"/>
+  </g>
+  <text x="256" y="378" text-anchor="middle" fill="#F8FAFC" font-family="'JetBrains Mono', 'Consolas', monospace" font-weight="700" font-size="76" letter-spacing="8">TEST</text>
+</svg>
